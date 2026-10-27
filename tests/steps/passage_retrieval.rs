@@ -139,6 +139,11 @@ async fn cited_near_chapter_start(world: &mut World) {
     assert_eq!(context.cited.start_char, citation.char_start);
 }
 
+#[given(regex = r"^an agent connected through the passage-retrieval interface$")]
+async fn agent_connected(world: &mut World) {
+    world.ensure_light().await.expect("connect without indexing");
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -243,6 +248,16 @@ async fn read_unknown_citation(world: &mut World) {
         .read("calibre:999:epub", 999_999, None)
         .await
         .expect("read");
+}
+
+#[when(regex = r"^the agent submits a request that names no claim, no language or a limit below 1$")]
+async fn submit_malformed(world: &mut World) {
+    world.search("", "de", None, None).await.expect("missing claim");
+    assert_eq!(world.error.as_deref(), Some("invalid_arguments"));
+    world.search("claim", "", None, None).await.expect("missing language");
+    assert_eq!(world.error.as_deref(), Some("invalid_arguments"));
+    world.search("claim", "de", None, Some(0)).await.expect("limit below one");
+    assert_eq!(world.error.as_deref(), Some("invalid_arguments"));
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -440,6 +455,16 @@ async fn invalid_citation(world: &mut World) {
 
 #[then(regex = r"^the failure is not a no-evidence result$")]
 async fn failure_not_abstention(world: &mut World) {
+    assert!(world.outcome.is_none());
+}
+
+#[then(regex = r"^the request fails as an invalid argument$")]
+async fn invalid_argument(world: &mut World) {
+    assert_eq!(world.error.as_deref(), Some("invalid_arguments"));
+}
+
+#[then(regex = r"^no result is returned$")]
+async fn no_result(world: &mut World) {
     assert!(world.outcome.is_none());
 }
 

@@ -118,7 +118,7 @@ Feature: Passage retrieval
     Then the request fails with reason invalid citation
     And the failure is not a no-evidence result
 
-  @givn.added @wip
+  @givn.added
   Scenario: A malformed request is rejected
     Given an agent connected through the passage-retrieval interface
     When the agent submits a request that names no claim, no language or a limit below 1
