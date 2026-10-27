@@ -20,7 +20,7 @@ Feature: Passage retrieval
     And the expansion names the term "trust"
     And the passages are ordered by score, then work id in numeric order, then passage index
 
-  @givn.added @e2e @wip
+  @givn.added @e2e
   Scenario: Agent widens context around a cited passage
     Given an agent connected through the passage-retrieval interface
     And the agent has retrieved a citation to an indexed edition
