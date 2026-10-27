@@ -139,20 +139,23 @@ givn_config_version: "0.9.2"
 
 # --- Addons ------------------------------------------------------------------
 # Pre-packaged artifact sets. See arc42 ch.8.11.
-# `givn init` enables ALL addons by default (opt-out via `givn init --no-addons`).
+# `givn init` enables the default-on addons (opt-out via `givn init --no-addons`);
+# default-off addons such as `outline` are listed but stay disabled.
 # This project's actual settings are below, written by `givn init`/`givn addons`:
 #
-addons:
-  arc42: true
-  absolute_mode: true
+# addons:
+#   arc42: true             # set to false to disable the arc42 documentation artifact
+#   absolute_mode: true     # set to false to disable the Absolute Mode communication
 #                          # policy. Manages a fenced <!-- givn:begin:absolute-mode -->
 #                          # block in AGENTS.md; the rest of AGENTS.md is untouched.
-  readme: true
-  coverage: true
-  domain_modeling: true
-  dev_principles: true
-  grill_me: true
-  grill_with_docs: true
+#   readme: true            # set to false to disable the readme scaffolding addon
+#   coverage: true          # set to false to disable the coverage lifecycle artifact
+#   domain_modeling: true   # project-level skill; see below
+#   dev_principles: true    # project-level skill; see below
+#   architecture_principles: false # opt-in architecture guidance; see below
+#   grill_me: true          # project-level command; see below
+#   grill_with_docs: true   # project-level command; see below
+#   outline: false      # opt-in outline report; default off
 #                          # Toggle with: givn addons enable|disable <name>, or
 #                          # `givn addons list` to see all known addons.
 
@@ -176,6 +179,14 @@ addons:
 # Skill — apply the team's engineering principles during implementation.
 # Generates the givn-dev-principles skill file on `givn skills sync`.
 # Toggle with: givn addons enable|disable dev_principles.
+#
+
+# --- Addon: architecture_principles -------------------------------------------
+# Opt-in architecture-principles experiment: answer questions at their last
+# responsible moment; design the consumer's contract now, defer the component
+# split. Gates the `architecture-principles` instruction and its proposal,
+# design, design-review, dialog, review, and tasks references.
+# Toggle with: givn addons enable|disable architecture_principles.
 #
 
 # --- Addon: grill_me ----------------------------------------------------------
@@ -236,6 +247,17 @@ addons:
 #     - Keep scenarios free of implementation detail.
 #     - Use the project's domain vocabulary in every scenario title.
 
+# --- User overrides preserved from previous version ---
+addons:
+  arc42: true
+  absolute_mode: true
+  readme: true
+  coverage: true
+  domain_modeling: true
+  dev_principles: true
+  grill_me: true
+  grill_with_docs: true
 skills:
   targets: [opencode, agents, omp, maki]
 rules: local-only
+# ---
