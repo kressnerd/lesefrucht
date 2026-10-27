@@ -64,6 +64,11 @@ async fn indexed_library(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
 }
 
+#[given(regex = r"^an indexed library whose claim is above the evidence threshold$")]
+async fn indexed_library_with_claim(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
 #[given(regex = r"^the claim appears in indexed works of the genres fachbuch and sachbuch$")]
 async fn claim_in_two_genres(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
@@ -179,6 +184,18 @@ async fn submit_twice(world: &mut World) {
     world.search(CLAIM, "de", scope.clone(), Some(5)).await.expect("first search");
     world.second_outcome = world.outcome.clone();
     world.search(CLAIM, "de", scope, Some(5)).await.expect("second search");
+}
+
+#[when(regex = r"^the agent retrieves passages and reads the first citation with window_chars 0$")]
+async fn read_first_exact(world: &mut World) {
+    world.search(CLAIM, "de", None, Some(5)).await.expect("search");
+    let (_, returned, _, citations) = candidate(world);
+    assert!(returned > 0, "a citation to read");
+    let citation = citations[0].clone();
+    world
+        .read(&citation.edition_id.0, citation.passage_index, Some(0))
+        .await
+        .expect("read");
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -328,5 +345,20 @@ async fn same_sequence(world: &mut World) {
     let first = keys(world.outcome.as_ref().expect("second outcome"));
     let second = keys(world.second_outcome.as_ref().expect("first outcome"));
     assert_eq!(first, second);
+}
+
+#[then(regex = r"^the returned text equals the text of the passage at the cited start and end offsets$")]
+async fn exact_text(world: &mut World) {
+    let context = world.context.as_ref().expect("context");
+    let (_, returned, _, citations) = candidate(world);
+    assert!(returned > 0);
+    let citation = &citations[0];
+    assert_eq!(context.cited.start_char, citation.char_start);
+    assert_eq!(context.cited.end_char, citation.char_end);
+    let passage_text = match world.outcome.as_ref().expect("outcome") {
+        QuestionOutcome::CandidatePassages { passages, .. } => &passages[0].text,
+        _ => unreachable!(),
+    };
+    assert_eq!(&context.text, passage_text);
 }
 

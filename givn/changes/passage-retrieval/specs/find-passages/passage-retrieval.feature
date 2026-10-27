@@ -97,7 +97,7 @@ Feature: Passage retrieval
     When the agent submits the same claim, scope and limit twice
     Then both candidate-passage results carry the same citations in the same order
 
-  @givn.added @wip
+  @givn.added
   Scenario: A returned citation resolves to the passage it cites
     Given an indexed library whose claim is above the evidence threshold
     When the agent retrieves passages and reads the first citation with window_chars 0
