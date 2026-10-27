@@ -1,0 +1,14 @@
+# Givn development-timeline reporter permissions.
+#
+# The reporter reads Maki's state directory (fs_read), writes one payload file
+# per flush and removes it (fs_write), and starts the awaitable
+# `givn history ingest` job that delivers it (run). It never reaches the
+# network, reads the environment, or starts a model turn — the three false keys
+# are named so the created file states the whole grant.
+[permissions]
+fs_read = true
+fs_write = true
+run = true
+net = false
+env = false
+agent = false
