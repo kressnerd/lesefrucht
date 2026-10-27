@@ -67,7 +67,7 @@ Feature: Passage retrieval
     Then the agent receives an unavailability report with reason index unavailable
     And the report is not a no-evidence result
 
-  @givn.added @wip
+  @givn.added
   Scenario: Fewer passages than requested are returned short
     Given an indexed library where four passages reach the threshold
     When the agent requests 20 passages

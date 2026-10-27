@@ -74,6 +74,11 @@ async fn library_without_claim(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
 }
 
+#[given(regex = r"^an indexed library where four passages reach the threshold$")]
+async fn library_with_four(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
 #[given(regex = r"^an index that is older than the freshness bound$")]
 async fn stale_index(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
@@ -125,6 +130,11 @@ async fn submit_absent_claim(world: &mut World) {
 #[when(regex = r"^the agent submits a claim$")]
 async fn submit_a_claim(world: &mut World) {
     world.search(CLAIM, "de", None, None).await.expect("search");
+}
+
+#[when(regex = r"^the agent requests 20 passages$")]
+async fn request_twenty(world: &mut World) {
+    world.search(RARE, "de", None, Some(20)).await.expect("search");
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -197,5 +207,25 @@ async fn report_not_abstention(world: &mut World) {
         world.outcome.as_ref().expect("outcome"),
         QuestionOutcome::Unavailable { .. }
     ));
+}
+
+#[then(regex = r"^the result holds 4 passages$")]
+async fn holds_four(world: &mut World) {
+    let (requested, returned, _, citations) = candidate(world);
+    assert_eq!(requested, 20);
+    assert_eq!(returned, 4);
+    assert_eq!(citations.len(), 4);
+}
+
+#[then(regex = r"^the result is marked short$")]
+async fn marked_short(world: &mut World) {
+    let (_, _, short, _) = candidate(world);
+    assert!(short, "short result");
+}
+
+#[then(regex = r"^no passage is padded to reach the requested number$")]
+async fn not_padded(world: &mut World) {
+    let (_, returned, _, citations) = candidate(world);
+    assert_eq!(returned, citations.len());
 }
 
