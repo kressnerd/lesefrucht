@@ -46,7 +46,7 @@ Feature: Passage retrieval
     Then the agent receives no evidence with reason unknown work
     And no passage is returned
 
-  @givn.added @wip
+  @givn.added
   Scenario: No passage above the threshold yields no evidence
     Given an indexed library that holds no passage for the claim
     When the agent submits the claim

@@ -69,6 +69,11 @@ async fn claim_in_two_genres(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
 }
 
+#[given(regex = r"^an indexed library that holds no passage for the claim$")]
+async fn library_without_claim(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -99,6 +104,11 @@ async fn submit_with_work(world: &mut World, work: String) {
         )
         .await
         .expect("search");
+}
+
+#[when(regex = r"^the agent submits the claim$")]
+async fn submit_absent_claim(world: &mut World) {
+    world.search(ABSENT, "de", None, None).await.expect("search");
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -139,5 +149,19 @@ async fn no_passage(world: &mut World) {
         QuestionOutcome::NoEvidence { .. } => {}
         other => panic!("expected no passage, got {other:?}"),
     }
+}
+
+#[then(regex = r"^the agent receives no evidence with reason no evidence$")]
+async fn no_evidence(world: &mut World) {
+    assert_abstention(world, "no_evidence");
+}
+
+#[then(regex = r"^the result is neither a failure nor an empty success$")]
+async fn not_failure_not_empty(world: &mut World) {
+    assert!(world.error.is_none());
+    assert!(matches!(
+        world.outcome.as_ref().expect("outcome"),
+        QuestionOutcome::NoEvidence { .. }
+    ));
 }
 
