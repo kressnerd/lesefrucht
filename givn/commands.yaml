@@ -1,0 +1,92 @@
+# ============================================================================
+#  givn commands  —  test runner and coverage configuration
+#
+#  This file is the SINGLE source of truth for configurable commands.
+#  `givn check`, `givn archive`, `givn run`, `givn upgrade`, and `givn status`
+#  read from here.
+#  `givn/config.yaml` stores project structure config; test commands live HERE.
+#
+#  The shipped defaults are sentinels that print setup guidance and exit
+#  non-zero — nothing ever falsely reports GREEN until you configure real
+#  runners.
+# ============================================================================
+
+# --- Test runner -------------------------------------------------------------
+# The command givn invokes to run your test suite. Keep the normal project
+# command in a script so the README and this file describe the same workflow.
+#
+# RECOMMENDED — coverage-instrumented runners (the review gate requires
+# coverage data to measure gaps):
+#   cargo llvm-cov --test features_runner                (Rust — line/branch coverage)
+#   npx nyc --reporter=text-summary npx cucumber-js "givn/specs/**/*.feature"  (Node.js)
+#   coverage run -m behave givn/specs && coverage report  (Python)
+#   mvn verify                                            (Java)
+#
+# Fallback — bare test runners (no coverage; prototyping only):
+#   cargo test --test features_runner
+#   behave
+#   pytest
+#   npx cucumber-js "givn/specs/**/*.feature"
+#
+# See arc42 ch.8.10 for details.
+verify:
+  command: "./run-tests.sh"            # project-owned test script
+
+  # --- E2E test runner --------------------------------------------------------
+  # Command to run @e2e-tagged scenarios. If unconfigured, the review gate and
+  # archive gate will reject any change whose specs include @e2e scenarios.
+  e2e_command: "./run-tests.sh --e2e"  # same script, @e2e filter
+
+# --- Coverage gate (requires addons.coverage: true) ---------------------------
+# Commands that produce Cobertura XML coverage data. The measurement script
+# writes both source reports; the merge script writes the report used by the
+# README badges and summary.
+#
+# Instrument every production process started by tests; merge every profile.
+# Use collision-safe output and flush on shutdown. Reject runner-only or
+# zero-production reports; verify one known production path is non-zero.
+#
+# The archive gate validates that both reports come from distinct
+# instrumentation runs — do not copy the non-e2e XML to the e2e path.
+coverage:
+  measure_command: "./measure-coverage.sh"
+  merge_command: "./merge-coverages.sh"
+  non_e2e_path: "coverage/non-e2e-cobertura.xml"
+  e2e_path: "coverage/e2e-cobertura.xml"
+  output_path: "coverage/cobertura-coverage.xml"
+
+# The scripts receive GIVN_COVERAGE_NON_E2E_PATH,
+# GIVN_COVERAGE_E2E_PATH, GIVN_COVERAGE_OUTPUT_PATH, and GIVN_FEATURES.
+# --- Product start ------------------------------------------------------------
+# How the built product is started. givn NEVER runs this command as part of
+# validation — the declaration is validated, documented in the README, and
+# gates `givn archive` while it is unconfigured. `givn run` and automation
+# around givn (CI, a preview host) read it and start the product.
+#
+#   product_type: server   long-running process that listens on a port
+#   product_type: cli      one-shot command-line tool
+#   product_type: library  consumed as a dependency; nothing to start
+#
+# For `server`, set exactly one of `port` (fixed) or `port_env` (the caller
+# passes the port through this environment variable), plus `ready_path`.
+#
+# Examples:
+#   run:
+#     command: "./run.sh"
+#     product_type: server
+#     port_env: "PORT"
+#     ready_path: "/healthz"
+#     ready_timeout_s: 60
+#
+#   run:
+#     command: "cargo run --release -- --help"
+#     product_type: cli
+#
+# Overlay semantics match `verify:` — this block replaces the default as a
+# whole, so list every field you need.
+run:
+  command: "givn missing-run-command"   # replace with the real start command
+  # product_type: server
+  # port_env: "PORT"
+  # ready_path: "/healthz"
+  # ready_timeout_s: 60
