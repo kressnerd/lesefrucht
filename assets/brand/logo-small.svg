@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Small optical size: 16-64 px. Solid pear; the sheet seams and the
+       citation bracket cannot resolve below 64 px and are dropped here. -->
+  <rect width="1024" height="1024" rx="224" fill="#1F3D2E"/>
+  <g transform="translate(512 512) scale(1.08) translate(-512 -512) translate(0 24)">
+    <path d="M412 300C412 230 452 202 512 202C572 202 612 230 612 300C612 400 690 460 752 540C800 604 812 660 812 712C812 790 752 860 664 860L360 860C272 860 212 790 212 712C212 660 224 604 272 540C334 460 412 400 412 300Z" fill="#F3E9D2"/>
+    <path d="M612 288C660 176 760 116 852 118C856 206 776 274 640 296Z" fill="#F3E9D2"/>
+    <path d="M300 560H724A60 60 0 0 1 724 680H300A60 60 0 0 1 300 560Z" fill="#D9A441"/>
+  </g>
+</svg>

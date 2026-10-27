@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Ink-green tile -->
+  <rect width="1024" height="1024" rx="224" fill="#1F3D2E"/>
+  <g transform="translate(-14 13)">
+    <!-- Pear body: eight stacked paper sheets, widths follow a pear profile -->
+    <rect x="386" y="292" width="184" height="56" rx="28" fill="#F3E9D2"/>
+    <rect x="360" y="362" width="236" height="56" rx="28" fill="#F3E9D2"/>
+    <rect x="328" y="432" width="300" height="56" rx="28" fill="#F3E9D2"/>
+    <!-- Highlighted passage: the 4th sheet, in amber, running out of the silhouette -->
+    <path d="M316 502H818V558H316A28 28 0 0 1 316 502Z" fill="#D9A441"/>
+    <rect x="234" y="572" width="488" height="56" rx="28" fill="#F3E9D2"/>
+    <rect x="190" y="642" width="576" height="56" rx="28" fill="#F3E9D2"/>
+    <rect x="172" y="712" width="612" height="56" rx="28" fill="#F3E9D2"/>
+    <rect x="216" y="782" width="524" height="56" rx="28" fill="#F3E9D2"/>
+    <!-- Citation marker: closing bracket at the end of the highlight -->
+    <path d="M840 468H880V592H840V572H860V488H840Z" fill="#F3E9D2"/>
+    <!-- Stem and leaf -->
+    <rect x="464" y="190" width="28" height="86" rx="14" fill="#F3E9D2"/>
+    <path d="M500 236C538 176 598 160 664 170C654 236 598 270 500 250Z" fill="#F3E9D2"/>
+  </g>
+</svg>
