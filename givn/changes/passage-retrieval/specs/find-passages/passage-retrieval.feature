@@ -125,7 +125,7 @@ Feature: Passage retrieval
     Then the request fails as an invalid argument
     And no result is returned
 
-  @givn.added @wip
+  @givn.added
   Scenario: Scope filters passages by language
     Given the claim appears in indexed works in German and in English
     When the agent submits that claim with scope language English

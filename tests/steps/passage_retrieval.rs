@@ -74,6 +74,11 @@ async fn claim_in_two_genres(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
 }
 
+#[given(regex = r"^the claim appears in indexed works in German and in English$")]
+async fn claim_in_two_languages(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
 #[given(regex = r"^an indexed library that holds no passage for the claim$")]
 async fn library_without_claim(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
@@ -258,6 +263,22 @@ async fn submit_malformed(world: &mut World) {
     assert_eq!(world.error.as_deref(), Some("invalid_arguments"));
     world.search("claim", "de", None, Some(0)).await.expect("limit below one");
     assert_eq!(world.error.as_deref(), Some("invalid_arguments"));
+}
+
+#[when(regex = r"^the agent submits that claim with scope language English$")]
+async fn submit_language_scope(world: &mut World) {
+    world
+        .search(
+            CLAIM,
+            "de",
+            Some(Scope {
+                language: Some("en".into()),
+                ..Scope::default()
+            }),
+            None,
+        )
+        .await
+        .expect("search");
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -466,5 +487,24 @@ async fn invalid_argument(world: &mut World) {
 #[then(regex = r"^no result is returned$")]
 async fn no_result(world: &mut World) {
     assert!(world.outcome.is_none());
+}
+
+#[then(regex = r"^at least one returned citation belongs to a work whose language is English$")]
+async fn at_least_one_english(world: &mut World) {
+    let (_, _, _, citations) = candidate(world);
+    let works = works(world);
+    assert!(citations.iter().any(|citation| works
+        .get(&citation.work_id)
+        .is_some_and(|work| work.language == "en")));
+}
+
+#[then(regex = r"^every returned citation belongs to a work whose language is English$")]
+async fn every_english(world: &mut World) {
+    let (_, _, _, citations) = candidate(world);
+    let works = works(world);
+    for citation in citations {
+        let work = works.get(&citation.work_id).expect("work");
+        assert_eq!(work.language, "en");
+    }
 }
 
