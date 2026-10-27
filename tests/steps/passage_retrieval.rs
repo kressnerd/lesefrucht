@@ -95,6 +95,17 @@ async fn empty_index(world: &mut World) {
     world.ensure_empty_index().await.expect("empty index");
 }
 
+#[given(regex = r"^the library metadata listing, the accepted glossary and the index generation are recorded$")]
+async fn record_library(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+    world.record_library();
+}
+
+#[given(regex = r"^the last successful index time reported by the readiness probe is recorded$")]
+async fn last_success_recorded(world: &mut World) {
+    assert!(world.recorded.is_some(), "recording includes the last success time");
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -145,6 +156,18 @@ async fn request_twenty(world: &mut World) {
 #[when(regex = r"^the agent requests 50 passages$")]
 async fn request_fifty(world: &mut World) {
     world.search(CLAIM, "de", None, Some(50)).await.expect("search");
+}
+
+#[when(regex = r"^the agent retrieves passages and widens context around one of them$")]
+async fn retrieve_and_widen(world: &mut World) {
+    world.search(CLAIM, "de", None, Some(5)).await.expect("search");
+    let (_, returned, _, citations) = candidate(world);
+    assert!(returned > 0, "a passage to widen");
+    let citation = citations[0].clone();
+    world
+        .read(&citation.edition_id.0, citation.passage_index, Some(120))
+        .await
+        .expect("read");
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -250,5 +273,27 @@ async fn holds_twenty(world: &mut World) {
 async fn not_short(world: &mut World) {
     let (_, _, short, _) = candidate(world);
     assert!(!short, "not short");
+}
+
+#[then(regex = r"^the library metadata listing is unchanged$")]
+async fn listing_unchanged(world: &mut World) {
+    let recorded = world.recorded.as_ref().expect("recorded listing").0.clone();
+    assert_eq!(world.listing(), recorded, "library listing");
+}
+
+#[then(regex = r"^the accepted glossary is unchanged$")]
+async fn glossary_unchanged(world: &mut World) {
+    assert_eq!(
+        world.store().glossary_count().expect("glossary"),
+        world.recorded_glossary
+    );
+}
+
+#[then(regex = r"^the index generation and the last successful index time are unchanged$")]
+async fn generation_unchanged(world: &mut World) {
+    let (_, generation, last_success) = world.recorded.clone().expect("recorded");
+    let status = world.store().status().expect("status");
+    assert_eq!(status.library_generation, generation);
+    assert_eq!(status.last_success_at, last_success);
 }
 

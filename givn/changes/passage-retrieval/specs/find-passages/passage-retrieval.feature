@@ -82,7 +82,7 @@ Feature: Passage retrieval
     Then the result holds 20 passages
     And the result is not marked short
 
-  @givn.added @wip
+  @givn.added
   Scenario: A retrieval never changes the library
     Given the library metadata listing, the accepted glossary and the index generation are recorded
     And the last successful index time reported by the readiness probe is recorded
