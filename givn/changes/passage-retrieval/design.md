@@ -1111,8 +1111,8 @@ task commits `Cargo.lock`.
 
 | Technology | Version recorded | Source |
 |---|---|---|
-| Rust | stable, resolved by the Nix devShell at setup | `nix develop` / nixpkgs at setup time (see Technology Decisions › Stack, host state); no number guessed, and the host rustup is not the pin |
-| calibre (`calibredb`) | installed by the devShell from nixpkgs at setup; the documented CLI was verified against the calibre 9.17 documentation and `cmd_list.py`/`cmd_export.py` on 2026-10-27. The host has no `calibredb` binary as of that date (`calibredb --version` → command not found), so the setup task installs it and records the resolved version | calibre documentation 2026-10-27; `calibredb` presence check on the host |
+| Rust | 1.99.1 on the host (`rustc --version` / `cargo --version`); the e2e builder uses `rust:1.90-bookworm` | `nix shell nixpkgs#rustc nixpkgs#cargo`, 2026-10-28; Docker Hub tag `rust:1.90-bookworm` |
+| calibre (`calibredb`) | 9.16 on the host via the Nix devShell; 6.13.0 in the e2e image (Debian bookworm). The documented CLI was verified against the calibre 9.17 documentation and `cmd_list.py`/`cmd_export.py`; the export flag set was reduced to the intersection of 6.13 and 9.x (`--single-dir`, `--dont-save-cover`, `--dont-write-opf`). | `calibredb --version` via nixpkgs, 2026-10-28; `calibre 6.13.0+repack-2+deb12u10` in the e2e image |
 | `tokio` | 1.54.1 | crates.io API, 2026-10-27 |
 | `axum` | 0.8.9 | crates.io API, 2026-10-27 |
 | `rmcp` | 3.8.0 (features verified) | crates.io API, 2026-10-27 |
@@ -1127,4 +1127,4 @@ task commits `Cargo.lock`.
 | `serde` / `uuid` / `thiserror` / `anyhow` | 1.0.229 / 1.29.0 / 2.0.21 / 1.0.104 | crates.io API, 2026-10-27 |
 | `podman` / `podman-compose` | 5.8.9 / 1.6.0 | `podman --version`, `podman-compose --version`, 2026-10-27 |
 | `grcov`, `llvm-tools` | latest stable, resolved from nixpkgs at setup | no number guessed |
-| Container base (product and embedding twin) | the calibre- and Rust-bearing image resolved by the setup task from the same nixpkgs pin | no number guessed |
+| Container base (product and embedding twin) | `rust:1.90-bookworm` builder; `debian:bookworm-slim` runtime with `calibre` 6.13.0 | Dockerfile, Dockerfile.twin; image build 2026-10-28 |
