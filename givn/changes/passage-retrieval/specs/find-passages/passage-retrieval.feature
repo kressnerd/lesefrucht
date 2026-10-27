@@ -6,7 +6,7 @@ Feature: Passage retrieval
   candidate-passage result with cited passages, or an explicit no-evidence
   result, or an unavailability report.
 
-  @givn.added @e2e @wip
+  @givn.added @e2e
   Scenario: Agent retrieves cited passages for a claim
     Given the library holds at least one indexed edition
     And the configured expansion translates the German term "Vertrauen" to the English term "trust"
