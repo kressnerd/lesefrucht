@@ -154,6 +154,12 @@ async fn agent_connected(world: &mut World) {
     world.ensure_light().await.expect("connect without indexing");
 }
 
+#[given(regex = r#"^an indexed library whose work "([^"]+)" holds only an edition in a format the product cannot read$"#)]
+async fn failed_work(world: &mut World, work: String) {
+    world.ensure_indexed().await.expect("index the fixture library");
+    world.named_work = Some(work);
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -296,6 +302,23 @@ async fn submit_author_year(world: &mut World) {
                 authors: vec!["Anna Beispiel".into()],
                 year_from: Some(2001),
                 year_to: Some(2001),
+                ..Scope::default()
+            }),
+            None,
+        )
+        .await
+        .expect("search");
+}
+
+#[when(regex = r"^the agent submits a claim with a scope naming that work$")]
+async fn submit_named_work(world: &mut World) {
+    let work = world.named_work.clone().expect("a named work");
+    world
+        .search(
+            CLAIM,
+            "de",
+            Some(Scope {
+                work_ids: vec![work],
                 ..Scope::default()
             }),
             None,
@@ -549,6 +572,26 @@ async fn every_author_year(world: &mut World) {
         let work = works.get(&citation.work_id).expect("work");
         assert!(work.authors.iter().any(|author| author == "Anna Beispiel"));
         assert!(work.pubdate.as_deref().is_some_and(|date| date.starts_with("2001")));
+    }
+}
+
+#[then(regex = r#"^the result names work "([^"]+)" as an edition that failed indexing with reason unsupported format$"#)]
+async fn failed_edition_named(world: &mut World, work: String) {
+    match world.outcome.as_ref().expect("outcome") {
+        QuestionOutcome::NoEvidence {
+            indexing: Some(indexing),
+            ..
+        } => {
+            let failed = indexing
+                .failed
+                .iter()
+                .find(|failed| failed.work_id.0 == work)
+                .unwrap_or_else(|| panic!("work {work} named as failed"));
+            assert_eq!(failed.reason, "unsupported_format");
+            assert_eq!(failed.format, "mobi");
+            assert_eq!(failed.edition_id.0, format!("calibre:{work}:mobi"));
+        }
+        other => panic!("expected an indexing summary, got {other:?}"),
     }
 }
 

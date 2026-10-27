@@ -139,7 +139,7 @@ Feature: Passage retrieval
     Then at least one returned citation belongs to a work of that author published in that year
     And every returned citation belongs to a work of that author published in that year
 
-  @givn.added @wip
+  @givn.added
   Scenario: An abstention names the editions that failed indexing
     Given an indexed library whose work "5" holds only an edition in a format the product cannot read
     When the agent submits a claim with a scope naming that work
