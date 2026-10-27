@@ -74,6 +74,12 @@ async fn library_without_claim(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
 }
 
+#[given(regex = r"^an index that is older than the freshness bound$")]
+async fn stale_index(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+    world.make_stale().expect("backdate the index");
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -109,6 +115,11 @@ async fn submit_with_work(world: &mut World, work: String) {
 #[when(regex = r"^the agent submits the claim$")]
 async fn submit_absent_claim(world: &mut World) {
     world.search(ABSENT, "de", None, None).await.expect("search");
+}
+
+#[when(regex = r"^the agent submits a claim$")]
+async fn submit_a_claim(world: &mut World) {
+    world.search(CLAIM, "de", None, None).await.expect("search");
 }
 
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
@@ -162,6 +173,19 @@ async fn not_failure_not_empty(world: &mut World) {
     assert!(matches!(
         world.outcome.as_ref().expect("outcome"),
         QuestionOutcome::NoEvidence { .. }
+    ));
+}
+
+#[then(regex = r"^the agent receives an unavailability report with reason stale index$")]
+async fn stale_report(world: &mut World) {
+    assert_unavailable(world, UnavailabilityReason::StaleIndex);
+}
+
+#[then(regex = r"^the report is not a no-evidence result$")]
+async fn report_not_abstention(world: &mut World) {
+    assert!(matches!(
+        world.outcome.as_ref().expect("outcome"),
+        QuestionOutcome::Unavailable { .. }
     ));
 }
 

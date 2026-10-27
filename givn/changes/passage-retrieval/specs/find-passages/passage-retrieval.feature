@@ -53,7 +53,7 @@ Feature: Passage retrieval
     Then the agent receives no evidence with reason no evidence
     And the result is neither a failure nor an empty success
 
-  @givn.added @wip
+  @givn.added
   Scenario: A stale index yields an unavailability report
     Given an index that is older than the freshness bound
     When the agent submits a claim
