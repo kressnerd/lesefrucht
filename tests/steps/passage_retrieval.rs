@@ -79,6 +79,11 @@ async fn claim_in_two_languages(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
 }
 
+#[given(regex = r"^the claim appears in indexed works of two authors and two publication years$")]
+async fn claim_two_authors(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
 #[given(regex = r"^an indexed library that holds no passage for the claim$")]
 async fn library_without_claim(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
@@ -273,6 +278,24 @@ async fn submit_language_scope(world: &mut World) {
             "de",
             Some(Scope {
                 language: Some("en".into()),
+                ..Scope::default()
+            }),
+            None,
+        )
+        .await
+        .expect("search");
+}
+
+#[when(regex = r"^the agent submits that claim with a scope naming one author and one year$")]
+async fn submit_author_year(world: &mut World) {
+    world
+        .search(
+            CLAIM,
+            "de",
+            Some(Scope {
+                authors: vec!["Anna Beispiel".into()],
+                year_from: Some(2001),
+                year_to: Some(2001),
                 ..Scope::default()
             }),
             None,
@@ -505,6 +528,27 @@ async fn every_english(world: &mut World) {
     for citation in citations {
         let work = works.get(&citation.work_id).expect("work");
         assert_eq!(work.language, "en");
+    }
+}
+
+#[then(regex = r"^at least one returned citation belongs to a work of that author published in that year$")]
+async fn at_least_one_author_year(world: &mut World) {
+    let (_, _, _, citations) = candidate(world);
+    let works = works(world);
+    assert!(citations.iter().any(|citation| works
+        .get(&citation.work_id)
+        .is_some_and(|work| work.authors.iter().any(|author| author == "Anna Beispiel")
+            && work.pubdate.as_deref().is_some_and(|date| date.starts_with("2001")))));
+}
+
+#[then(regex = r"^every returned citation belongs to a work of that author published in that year$")]
+async fn every_author_year(world: &mut World) {
+    let (_, _, _, citations) = candidate(world);
+    let works = works(world);
+    for citation in citations {
+        let work = works.get(&citation.work_id).expect("work");
+        assert!(work.authors.iter().any(|author| author == "Anna Beispiel"));
+        assert!(work.pubdate.as_deref().is_some_and(|date| date.starts_with("2001")));
     }
 }
 

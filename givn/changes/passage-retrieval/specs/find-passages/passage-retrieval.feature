@@ -132,7 +132,7 @@ Feature: Passage retrieval
     Then at least one returned citation belongs to a work whose language is English
     And every returned citation belongs to a work whose language is English
 
-  @givn.added @wip
+  @givn.added
   Scenario: Scope filters passages by author and year
     Given the claim appears in indexed works of two authors and two publication years
     When the agent submits that claim with a scope naming one author and one year
