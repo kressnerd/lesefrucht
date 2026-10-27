@@ -44,11 +44,11 @@ impl std::fmt::Debug for World {
 
 impl World {
     pub fn fixture_library() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/library")
+        super::fixtures::fixture_library()
     }
 
     pub fn synonyms() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/synonyms.toml")
+        super::fixtures::synonyms()
     }
 
     pub async fn ensure_indexed(&mut self) -> anyhow::Result<()> {
@@ -69,8 +69,8 @@ impl World {
     pub async fn ensure_empty_index(&mut self) -> anyhow::Result<()> {
         let temp = tempfile::tempdir()?;
         let library = temp.path().join("library");
-        copy_dir(&Self::fixture_library(), &library)?;
-        let config = self.config_for(&temp, &library)?;
+        super::fixtures::copy_dir(&Self::fixture_library(), &library)?;
+        let config = self.config_for(&temp, &library).await?;
         let store = Arc::new(IndexStore::open(&config)?);
         let service = Arc::new(SearchService::new(Arc::clone(&store), config.clone()));
         self.temp = Some(temp);
@@ -81,26 +81,15 @@ impl World {
         Ok(())
     }
 
-    pub fn config_for(&mut self, temp: &TempDir, library: &Path) -> anyhow::Result<Config> {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        let address = listener.local_addr()?;
-        drop(listener);
+    pub async fn config_for(&mut self, temp: &TempDir, library: &Path) -> anyhow::Result<Config> {
         let dimension = 64;
-        let twin = tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::bind(address).await.unwrap();
-            axum::serve(
-                listener,
-                openai_compatible::router(openai_compatible::TwinState { dimension }),
-            )
-            .await
-            .unwrap();
-        });
+        let (twin, base_url) = super::twins::spawn(dimension).await?;
         self.twin = Some(twin);
         let mut config = Config::default();
         config.library.url = library.to_string_lossy().to_string();
         config.library.calibredb_binary =
             std::env::var("CALIBREDB_BINARY").unwrap_or_else(|_| "calibredb".into());
-        config.embedding.base_url = format!("http://{address}/v1");
+        config.embedding.base_url = format!("{base_url}/v1");
         config.embedding.model = "deterministic".into();
         config.embedding.dimension = dimension;
         config.index.dir = temp.path().join("index");
@@ -181,18 +170,7 @@ impl World {
             .as_ref()
             .map(|config| config.library.calibredb_binary.clone())
             .unwrap_or_else(|| "calibredb".into());
-        std::process::Command::new(binary)
-            .args([
-                "list",
-                "--with-library",
-                &self.library.to_string_lossy(),
-                "--for-machine",
-                "--fields",
-                "all",
-            ])
-            .output()
-            .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-            .unwrap_or_default()
+        super::calibredb::list(&binary, &self.library)
     }
 
     pub fn record_library(&mut self) {
@@ -288,20 +266,6 @@ fn error_reason(error: &lesefrucht::retrieval::ServiceError) -> String {
     }
 }
 
-fn copy_dir(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(destination)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let target = destination.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
-        } else {
-            std::fs::copy(entry.path(), target)?;
-        }
-    }
-    Ok(())
-}
-
 struct Shared {
     _temp: TempDir,
     library: PathBuf,
@@ -317,25 +281,15 @@ async fn shared() -> &'static Shared {
         .get_or_init(|| async {
             let temp = tempfile::tempdir().expect("shared temp");
             let library = temp.path().join("library");
-            copy_dir(&World::fixture_library(), &library).expect("copy fixture library");
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-            let address = listener.local_addr().expect("address");
-            drop(listener);
+            super::fixtures::copy_dir(&World::fixture_library(), &library).expect("copy fixture library");
             let dimension = 64;
-            let twin = tokio::spawn(async move {
-                let listener = tokio::net::TcpListener::bind(address).await.unwrap();
-                axum::serve(
-                    listener,
-                    openai_compatible::router(openai_compatible::TwinState { dimension }),
-                )
-                .await
-                .unwrap();
-            });
+            let (twin, base_url) =
+                crate::steps::support::twins::spawn(dimension).await.expect("twin");
             let mut config = Config::default();
             config.library.url = library.to_string_lossy().to_string();
             config.library.calibredb_binary =
                 std::env::var("CALIBREDB_BINARY").unwrap_or_else(|_| "calibredb".into());
-            config.embedding.base_url = format!("http://{address}/v1");
+            config.embedding.base_url = format!("{base_url}/v1");
             config.embedding.model = "deterministic".into();
             config.embedding.dimension = dimension;
             config.index.dir = temp.path().join("index");

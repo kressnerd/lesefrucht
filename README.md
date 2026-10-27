@@ -15,13 +15,18 @@ and maintains that library.
 
 ## Quick start
 
-The repository is specification-first. It holds the Gherkin specification, the
-architecture record and the change in flight, but no product code yet, so a clone
-builds nothing.
+The repository is specification-first: the Gherkin specification and the
+architecture record are authoritative, and the Rust implementation is built from
+them.
 
 ```sh
 git clone <this repository>
 cd lesefrucht
+nix develop
+cargo build
+./dev-up.sh          # product, deterministic embedding twin, fixture library
+./run-tests.sh       # non-e2e scenarios
+./run-tests.sh --e2e # the @e2e scenarios through the compose stack
 ```
 
 What the first change delivers is in
@@ -41,8 +46,8 @@ What the first change delivers is in
 
 ## Usage
 
-No binary exists yet. When the first change lands, the product exposes the
-`passage-retrieval` capability over MCP with two tools:
+The product exposes the `passage-retrieval` capability over MCP at
+`http://127.0.0.1:8787/mcp` with two tools:
 
 - `search_passages` takes a claim or phrase, a language, an optional scope
   (genre, language, authors, year range, named works) and an optional limit; it

@@ -8,7 +8,9 @@ use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{Json, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::domain::{PassageContext, QuestionOutcome};
-use crate::retrieval::{ReadRequest, SearchRequest, SearchService};
+use crate::retrieval::SearchService;
+
+use super::dto::{ReadRequest, SearchRequest};
 
 use super::errors;
 

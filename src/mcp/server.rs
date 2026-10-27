@@ -9,33 +9,16 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService,
 };
-use serde::Serialize;
 
 use crate::index::IndexStore;
 use crate::retrieval::SearchService;
 
+use super::dto::{FailedEditionHealth, Health};
 use super::tools::LesefruchtServer;
 
 #[derive(Clone)]
 struct HealthState {
     store: Arc<IndexStore>,
-}
-
-#[derive(Debug, Serialize)]
-struct FailedEditionHealth {
-    work_id: String,
-    edition_id: String,
-    format: String,
-    reason: String,
-}
-
-#[derive(Debug, Serialize)]
-struct Health {
-    indexed_editions: usize,
-    failed_editions: Vec<FailedEditionHealth>,
-    last_success_at: Option<u64>,
-    library_generation: Option<String>,
-    index_state: String,
 }
 
 pub fn router(service: Arc<SearchService>, store: Arc<IndexStore>, mcp_path: &str) -> Router {
