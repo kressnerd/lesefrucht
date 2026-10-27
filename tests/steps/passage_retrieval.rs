@@ -59,6 +59,11 @@ fn assert_unavailable(world: &World, reason: UnavailabilityReason) {
     }
 }
 
+#[given(regex = r"^an indexed library$")]
+async fn indexed_library(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
 #[given(regex = r"^the claim appears in indexed works of the genres fachbuch and sachbuch$")]
 async fn claim_in_two_genres(world: &mut World) {
     world.ensure_indexed().await.expect("index the fixture library");
@@ -72,6 +77,22 @@ async fn submit_with_genre(world: &mut World) {
             "de",
             Some(Scope {
                 genre: Some("fachbuch".into()),
+                ..Scope::default()
+            }),
+            None,
+        )
+        .await
+        .expect("search");
+}
+
+#[when(regex = r#"^the agent submits a claim with a scope naming the work "([^"]+)"$"#)]
+async fn submit_with_work(world: &mut World, work: String) {
+    world
+        .search(
+            CLAIM,
+            "de",
+            Some(Scope {
+                work_ids: vec![work],
                 ..Scope::default()
             }),
             None,
@@ -105,5 +126,18 @@ async fn every_fachbuch(world: &mut World) {
 #[then(regex = r"^no returned citation belongs to a work outside the genre fachbuch$")]
 async fn none_outside(world: &mut World) {
     every_fachbuch(world).await;
+}
+
+#[then(regex = r"^the agent receives no evidence with reason unknown work$")]
+async fn unknown_work(world: &mut World) {
+    assert_abstention(world, "unknown_work");
+}
+
+#[then(regex = r"^no passage is returned$")]
+async fn no_passage(world: &mut World) {
+    match world.outcome.as_ref().expect("outcome") {
+        QuestionOutcome::NoEvidence { .. } => {}
+        other => panic!("expected no passage, got {other:?}"),
+    }
 }
 

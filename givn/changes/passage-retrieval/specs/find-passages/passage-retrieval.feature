@@ -39,7 +39,7 @@ Feature: Passage retrieval
     And every returned citation belongs to an indexed work of the genre fachbuch
     And no returned citation belongs to a work outside the genre fachbuch
 
-  @givn.added @wip
+  @givn.added
   Scenario: A scope naming an unknown work yields no evidence
     Given an indexed library
     When the agent submits a claim with a scope naming the work "999"
