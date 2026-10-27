@@ -111,6 +111,34 @@ async fn last_success_recorded(world: &mut World) {
     assert!(world.recorded.is_some(), "recording includes the last success time");
 }
 
+#[given(regex = r"^a cited passage that starts less than the maximum window after its chapter start$")]
+async fn cited_near_chapter_start(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+    world.search(CLAIM, "de", None, Some(5)).await.expect("search");
+    let (_, returned, _, citations) = candidate(world);
+    assert!(returned > 0, "the fixture claim must have a passage");
+    let citation = citations[0].clone();
+    world
+        .read(
+            &citation.edition_id.0,
+            citation.passage_index,
+            Some(0),
+        )
+        .await
+        .expect("read the citation");
+    let context = world.context.as_ref().expect("cited context");
+    let (chapter_start, _) = world
+        .store()
+        .chapter_bounds(&citation.edition_id, citation.chapter.index)
+        .expect("chapter bounds")
+        .expect("chapter exists");
+    assert!(
+        citation.char_start.saturating_sub(chapter_start) < 120,
+        "the fixture passage must start within the configured maximum window of its chapter"
+    );
+    assert_eq!(context.cited.start_char, citation.char_start);
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -194,6 +222,17 @@ async fn read_first_exact(world: &mut World) {
     let citation = citations[0].clone();
     world
         .read(&citation.edition_id.0, citation.passage_index, Some(0))
+        .await
+        .expect("read");
+}
+
+#[when(regex = r"^the agent requests a window wider than the configured maximum window$")]
+async fn request_wide_window(world: &mut World) {
+    let (_, returned, _, citations) = candidate(world);
+    assert!(returned > 0, "a citation to widen");
+    let citation = citations[0].clone();
+    world
+        .read(&citation.edition_id.0, citation.passage_index, Some(5_000))
         .await
         .expect("read");
 }
@@ -360,5 +399,29 @@ async fn exact_text(world: &mut World) {
         _ => unreachable!(),
     };
     assert_eq!(&context.text, passage_text);
+}
+
+#[then(regex = r"^the bounds do not extend beyond the chapter$")]
+async fn bounds_within_chapter(world: &mut World) {
+    let context = world.context.as_ref().expect("context");
+    let (chapter_start, chapter_end) = world
+        .store()
+        .chapter_bounds(&context.citation.edition_id, context.citation.chapter.index)
+        .expect("chapter")
+        .expect("chapter bounds");
+    assert!(context.bounds.start_char >= chapter_start);
+    assert!(context.bounds.end_char <= chapter_end);
+}
+
+#[then(regex = r"^the window is no wider than the configured maximum window$")]
+async fn window_not_wider(world: &mut World) {
+    let context = world.context.as_ref().expect("context");
+    assert!(context.cited.start_char - context.bounds.start_char <= 120);
+    assert!(context.bounds.end_char - context.cited.end_char <= 120);
+}
+
+#[then(regex = r"^the result reports that it was truncated$")]
+async fn truncated(world: &mut World) {
+    assert!(world.context.as_ref().expect("context").truncated);
 }
 

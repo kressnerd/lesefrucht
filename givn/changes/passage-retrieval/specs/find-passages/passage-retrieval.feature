@@ -103,7 +103,7 @@ Feature: Passage retrieval
     When the agent retrieves passages and reads the first citation with window_chars 0
     Then the returned text equals the text of the passage at the cited start and end offsets
 
-  @givn.added @wip
+  @givn.added
   Scenario: A widened context is clamped to the chapter and the maximum window
     Given a cited passage that starts less than the maximum window after its chapter start
     When the agent requests a window wider than the configured maximum window
