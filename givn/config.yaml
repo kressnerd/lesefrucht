@@ -251,7 +251,7 @@ givn_config_version: "0.9.2"
 addons:
   arc42: true
   absolute_mode: true
-  readme: false
+  readme: true
   coverage: true
   domain_modeling: true
   dev_principles: true
