@@ -111,7 +111,7 @@ Feature: Passage retrieval
     And the window is no wider than the configured maximum window
     And the result reports that it was truncated
 
-  @givn.added @wip
+  @givn.added
   Scenario: An unknown citation is rejected as an invalid request
     Given an indexed library
     When the agent reads a passage with a citation the index does not hold

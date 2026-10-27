@@ -237,6 +237,14 @@ async fn request_wide_window(world: &mut World) {
         .expect("read");
 }
 
+#[when(regex = r"^the agent reads a passage with a citation the index does not hold$")]
+async fn read_unknown_citation(world: &mut World) {
+    world
+        .read("calibre:999:epub", 999_999, None)
+        .await
+        .expect("read");
+}
+
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
 async fn at_least_one_fachbuch(world: &mut World) {
     let (_, _, _, citations) = candidate(world);
@@ -423,5 +431,15 @@ async fn window_not_wider(world: &mut World) {
 #[then(regex = r"^the result reports that it was truncated$")]
 async fn truncated(world: &mut World) {
     assert!(world.context.as_ref().expect("context").truncated);
+}
+
+#[then(regex = r"^the request fails with reason invalid citation$")]
+async fn invalid_citation(world: &mut World) {
+    assert_eq!(world.error.as_deref(), Some("invalid_citation"));
+}
+
+#[then(regex = r"^the failure is not a no-evidence result$")]
+async fn failure_not_abstention(world: &mut World) {
+    assert!(world.outcome.is_none());
 }
 
