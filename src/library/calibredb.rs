@@ -94,7 +94,6 @@ impl Calibredb {
             format,
             "--dont-save-cover",
             "--dont-write-opf",
-            "--dont-save-extra-files",
             &id,
         ])
         .await?;

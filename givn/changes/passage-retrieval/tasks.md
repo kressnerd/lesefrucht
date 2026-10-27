@@ -85,7 +85,7 @@ RELEASE_NOTE='An agent can submit a claim or phrase to the indexed library and r
   ISO-8601.
 - Bytes: `calibredb export --with-library <library.url> --to-dir <tmp>
   --single-dir --formats <FMT> --dont-save-cover --dont-write-opf
-  --dont-save-extra-files <id>`; take the single file whose extension matches
+  <id>`; take the single file whose extension matches
   the format; remove the temp directory on success and failure.
 - `library.url` is required configuration (content-server URL or local path);
   `library.calibredb_binary` defaults to `calibredb`; `library.timeout_ms`

@@ -23,7 +23,7 @@ services:
       LESEFRUCHT__RETRIEVAL__LEXICAL_MIN_SCORE: "0.05"
       LESEFRUCHT__RETRIEVAL__VECTOR_MIN_COSINE: "0.99"
     volumes:
-      - ./tests/fixtures/library:/library:ro
+      - ./tests/fixtures/library:/library
       - ./tests/fixtures/synonyms.toml:/fixtures/synonyms.toml:ro
       - dev-data:/data
     ports:

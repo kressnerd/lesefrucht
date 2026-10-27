@@ -123,10 +123,12 @@ decision list labels the calibre-CLI option "A"; in this question's ordering it
 is option C. Discovery uses
 `calibredb list --with-library <url-or-path> --for-machine --fields all` and
 edition bytes come from `calibredb export --with-library <url-or-path> --to-dir
-<tmp> --single-dir --formats <FMT> --dont-save-cover --dont-write-opf
---dont-save-extra-files <id>` (`--single-dir` is the design refinement that
-makes the exported filename discoverable). Every `/ajax/books` and `/get/...`
-claim is removed from the design and arc42; no HTTP calibre client remains.
+<tmp> --single-dir --formats <FMT> --dont-save-cover --dont-write-opf <id>`
+(`--single-dir` is the design refinement that makes the exported filename
+discoverable; `--dont-save-extra-files` is absent from the calibre 6.13 e2e
+image and unnecessary because the single exported format file is selected by
+extension). Every `/ajax/books` and `/get/...` claim is removed from the design
+and arc42; no HTTP calibre client remains.
 
 **Rejected.** A — rejected because OPDS exposes tags only inside a
 human-readable XHTML block and has no structured language field, so the scope
@@ -348,6 +350,25 @@ unchanged.
 
 **Persona** (`givn/personas/reader--researcher.md`) — 2026-10-27 running-record
 entry for D3 and a qualified 2026-10-27 stance; the 2026-10-20 stance is kept.
+
+
+## Post-review design correction (2026-10-27)
+
+Implementation against the e2e image exposed that its calibre 6.13 does not
+accept `--dont-save-extra-files` on `calibredb export` (the option arrived in a
+later calibre release). The decision itself is unchanged: discovery and bytes
+still go through the documented `calibredb` CLI. The command in `design.md`,
+chapter 2 and this record drops the unsupported flag; `--single-dir` plus
+selection by format extension already isolates the one exported file. A fresh
+review of this amendment found no new scope, architecture, scenario or
+testability consequence: the same single JSON array and the same export path
+are exercised, the e2e image now starts, and the 17 non-e2e scenarios plus both
+`@e2e` scenarios remain the evidence. A second implementation discovery is
+recorded with it: calibre 6.13 writes a case-sensitivity probe file into the
+library directory, so the e2e fixture library is mounted writable instead of
+read-only. No metadata write occurs; the non-mutation scenario still asserts
+that only `list` and `export` run. This is recorded rather than silently
+applied.
 
 ## Verification
 
