@@ -5,7 +5,7 @@
 The product turns a private calibre library into a citable source: a reader, or
 the agent acting for them, asks a question about the books and receives a
 response in which every sentence carries a passage from the library, with a
-citation that opens the exact position.
+citation that carries the exact position and opens its edition.
 
 The first change (`passage-retrieval`, use case `find-passages`) delivers the
 evidence side and the conditions for it:
@@ -31,7 +31,7 @@ until then. The use-case contract is `givn/specs/find-passages/usecase.md`.
 
 | Priority | Quality attribute | Motivation |
 |---|---|---|
-| 1 | Evidence fidelity | A returned passage must exist at its citation, character for character; a passage that cannot be opened is not evidence (`reader--researcher`). |
+| 1 | Evidence fidelity | A returned passage must exist at its citation, character for character; the citation's character span is exact and the viewer opens the edition it belongs to, with one-click position-aware opening deferred as TD-009 (`reader--researcher`). |
 | 2 | Honest outcome | `no evidence`, `unknown work` and an unavailability report are distinguishable results, never an empty list and never an error (`agent--for-reader`, R6). |
 | 3 | Determinism | The same request against the same index yields the same sequence of passages, so an agent can reason about and cite the result. |
 | 4 | Privacy of the library | Book text leaves the host only to endpoints the owner configured; there is no default cloud endpoint and no telemetry carrying text (`rights--holder`). |
@@ -41,8 +41,8 @@ until then. The use-case contract is `givn/specs/find-passages/usecase.md`.
 
 | Role | Expectation |
 |---|---|
-| Reader and library owner | Findings they can check: a cited passage opens at the exact position, and the product says so when it has nothing. |
+| Reader and library owner | Findings they can check: a cited passage's character span is exact, its edition opens from the citation, and the product says so when it has nothing. |
 | Agent for the reader | A machine-readable, token-bounded result with a distinguishable abstention and a deterministic order. |
 | Library custodian (the same person in another role) | No silent change to calibre metadata; this change writes nothing to the library. |
-| calibre and its maintainers | Only documented interfaces are used: the content server, never `metadata.db` internals. |
+| calibre and its maintainers | Only documented interfaces are used: the `calibredb` command, never `metadata.db` internals or an internal HTTP route. |
 | Rights holders of the books | No redistribution; every outbound path is configured by the owner. |

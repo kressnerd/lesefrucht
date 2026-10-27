@@ -11,7 +11,7 @@ sequenceDiagram
   participant M as mcp
   participant S as retrieval::service
   participant St as index::store
-  participant C as library::calibre
+  participant C as library::calibredb
   participant E as expand
   participant L as lexical
   participant V as vector
@@ -70,9 +70,14 @@ sequenceDiagram
 6. Fusion, ordering, clamping and the `short` flag produce the result.
 
 **Notes:** the freshness generation read is cached for a configured interval to
-avoid a content-server call per request. The result is deterministic for a fixed
+avoid a `calibredb list` per request. The result is deterministic for a fixed
 index, configuration and library generation; scores are floats and are not part
-of the contract's stability.
+of the contract's stability. A `no_evidence` result may carry the optional
+`indexing` summary naming the editions that failed indexing and their reasons;
+that is the only way the agent learns about a missing capability, and it never
+appears on a candidate-passage result. An unreachable library (a failing
+`calibredb list`) is reported as `unavailable` with reason `library_unreachable`
+before retrieval, never as `no evidence`.
 
 ## Scenario: `read_passage` — widening a citation
 
@@ -105,7 +110,10 @@ sequenceDiagram
 3. The window is expanded by `window_chars` on both sides and clamped to the
    chapter bounds; `truncated` reports a clamp.
 4. The response carries the returned text bounds and the cited bounds
-   separately, both as Unicode scalar indices.
+   separately, both as Unicode scalar indices. The citation's `viewer_url`
+   (`calibre://show-book/<library>/<work>`) opens the edition and carries no
+   position; the exact position is the character span, and a position-aware
+   viewer opening is deferred as TD-009.
 
 **Notes:** widening never crosses a chapter boundary, so the returned text
 always belongs to one chapter and one citation.
@@ -118,14 +126,14 @@ always belongs to one chapter and one citation.
 sequenceDiagram
   participant R as requester
   participant Q as indexing::queue
-  participant L as library
+  participant L as library::calibredb
   participant X as extract
   participant Ch as chunk
   participant Em as embed
   participant St as index::store
   R->>Q: enqueue(work, edition)
-  Q->>L: fetch edition bytes
-  L-->>Q: bytes, content hash
+  Q->>L: calibredb export <id> --formats <FMT> --to-dir <tmp>
+  L-->>Q: file in the temp dir, removed after the commit
   Q->>St: recorded hash and state
   alt unchanged and indexed
     Q->>St: touch last checked
@@ -149,8 +157,12 @@ sequenceDiagram
 
 1. The content hash decides whether work is needed at all; an unchanged hash is
    never re-extracted and never re-embedded.
-2. Failure is recorded with its reason, so `/healthz` and the agent can
-   distinguish a missing capability from a missing passage.
+2. Failure is recorded with its reason. `/healthz` projects the aggregate for
+   the operator and for test readiness, and the same recorded failures reach the
+   agent as the optional `indexing` summary of a `no_evidence` result, so an
+   abstention can distinguish a missing capability from a missing passage. The
+   agent has no surface that enumerates failures on demand: it sees them only
+   when it receives an abstention.
 3. The commit writes passages and state transactionally, then the lexical
    commit, then the vector save; the edition becomes `indexed` only after all
    three succeed.

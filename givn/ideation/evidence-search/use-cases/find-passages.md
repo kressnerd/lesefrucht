@@ -42,7 +42,7 @@ The agent submits a claim or a search phrase, optionally with a scope.
 
 - R1 Every returned passage carries a citation to an indexed edition.
 - R2 The result contains only passages retrieved for this request.
-- R3 The order is deterministic: score, then work id, then chunk index.
+- R3 The order is deterministic: score, then work id in numeric order, then passage index.
 - R4 The result is capped at the requested number, at most 20.
 - R5 The product does not judge whether a passage supports the claim.
 - R6 `no evidence` is a result, never a failure and never an empty success.

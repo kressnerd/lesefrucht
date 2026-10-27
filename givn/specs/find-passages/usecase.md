@@ -19,9 +19,10 @@ The agent submits a claim or a search phrase, optionally with a scope.
 
 ## Preconditions
 
-- The library is reachable through the content server.
-- At least one edition is indexed.
 - The request is expressed in one language.
+- The normal case is a reachable library with at least one indexed edition;
+  extension 3b covers an unavailable or stale index and extension 3c covers an
+  unreachable library.
 
 ## Main flow
 
@@ -35,14 +36,15 @@ The agent submits a claim or a search phrase, optionally with a scope.
 
 - 1a: The scope names a work that is not in the library → System returns `no evidence` with reason `unknown work`; protects the guarantee that no passage outside the library is returned.
 - 3a: No passage reaches the threshold → System returns `no evidence` with reason `no evidence`; protects R6.
-- 3b: The index is unavailable or older than the freshness bound → System returns an unavailability report; protects the distinction from an empty success.
+- 3b: The index is unavailable or older than the freshness bound → System returns an unavailability report with the reason `index unavailable` or `stale index`; protects the distinction from an empty success.
+- 3c: The library cannot be reached → System returns an unavailability report with the reason `library unreachable`; protects the distinction between "the library does not support the question" and "the library could not be checked".
 - 4a: Fewer passages than requested exist above the threshold → System returns what exists and marks the result as short; never pads; protects R4.
 
 ## Rules
 
 - R1 Every returned passage carries a citation to an indexed edition.
 - R2 The result contains only passages retrieved for this request.
-- R3 The order is deterministic: score, then work id, then chunk index.
+- R3 The order is deterministic: score, then work id in numeric order, then passage index.
 - R4 The result is capped at the requested number, at most 20.
 - R5 The product does not judge whether a passage supports the claim.
 - R6 `no evidence` is a result, never a failure and never an empty success.
@@ -56,7 +58,9 @@ candidate-passage result, one abstention with its reason, or one unavailability
 report. The three are mutually exclusive and are distinguishable by the
 consumer; a candidate-passage result also carries whether it is short of the
 requested number. An unavailability report is not an abstention: it says the
-system cannot answer, not that the library does not support the question.
+system cannot answer, not that the library does not support the question. An
+abstention may name the editions that failed indexing and their reasons, so a
+missing passage is distinguishable from a missing capability.
 
 ## Examples
 
@@ -72,12 +76,12 @@ system cannot answer, not that the library does not support the question.
 
 ## Success guarantee
 
-The agent holds candidate passages for the claim, each with a citation, in a deterministic order.
+The agent holds candidate passages for the claim, each with a citation, in a deterministic order, and can widen the context around any of them with exact bounds.
 
 ## Personas
 
 - agent--for-reader — checks that `no evidence` is distinguishable from failure and that order is deterministic.
-- reader--researcher — checks that a citation opens the exact position.
+- reader--researcher — checks that a citation carries the exact position as the character span the agent opens; the position-aware viewer opening is deferred (TD-009).
 
 ## Capabilities
 
@@ -92,7 +96,7 @@ The agent holds candidate passages for the claim, each with a citation, in a det
 
 ## Includes
 
-- none — uses the subfunctions retrieve-evidence, read-around-passage and resolve-citation.
+- none.
 
 ## Extends
 

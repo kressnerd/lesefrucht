@@ -6,7 +6,7 @@ consulted: none
 informed: none
 ---
 
-# Agent interface as MCP over Streamable HTTP using the official Rust SDK
+# Agent interface as MCP over Streamable HTTP
 
 ## Qualification
 
@@ -28,26 +28,34 @@ replacement_adr: null
 
 Evidence:
 
-- alternatives: MCP over Streamable HTTP, MCP over stdio, a bespoke REST/JSON
-  API, and a hand-rolled MCP JSON-RPC transport are four materially different
-  options, each with a stated gain and cost.
+- alternatives: MCP over Streamable HTTP, MCP over stdio, and a bespoke
+  REST/JSON API are three materially different options, each with a stated gain
+  and cost.
 - architectural_impact: the choice fixes the external contract surface, the
   process model (a long-running listener rather than a per-call subprocess), the
   compatibility boundary with MCP clients, and the deployment exposure (loopback
   bind, no authentication in this slice).
 - durable_consequence: changing transport later breaks every connected agent and
-  the e2e driver, and requires both a server and a client rewrite; the SDK also
-  pins the protocol revisions the product speaks.
+  the e2e driver, and requires both a server and a client rewrite.
 - lower_level_artifact: the tool schemas and result shapes are owned by
-  `design.md` (MCP Contract) and the behaviour by the Gherkin; the transport, process model
-  and compatibility boundary are not fully ownable there because future surfaces
-  (the cited answer, the web surface) must reuse the same server and negotiate
-  the same revisions.
+  `design.md` (MCP Contract) and the behaviour by the Gherkin; the transport,
+  process model and compatibility boundary are not fully ownable there because
+  future surfaces (the cited answer, the web surface) must reuse the same server
+  and negotiate the same revisions.
 - existing_adr_check: no active or archived ADR covers the agent interface
   (register empty, `docs/arc42/adr/` held only the template); route is
   `NEW_ADR`.
 - must_be_shared: everyone adding a tool must route it through this server and
   keep the tagged-result contract, or agents receive an incompatible surface.
+
+### Cheaper home
+
+The implementation choice that sits inside this boundary — the official Rust SDK
+(`rmcp`) instead of a hand-rolled JSON-RPC transport — is fully owned by
+`givn/changes/passage-retrieval/design.md` (Technology Decisions › MCP SDK
+implementation) and is deliberately **not** part of this record. This ADR owns
+one decision: the agent interface is MCP over Streamable HTTP. The SDK section in
+`design.md` is the only place that rationale lives.
 
 ### MADR checklist evidence
 
@@ -79,27 +87,25 @@ path and the e2e driver.
   general-purpose agent.
 - One process serving several clients over the life of the library.
 - The same surface must carry a readiness probe for local operation.
-- No hand-maintained protocol implementation if an official SDK exists.
 - Loopback by default: the library is private and this slice adds no
   authentication.
 
 ## Considered Options
 
-- MCP over Streamable HTTP, implemented with the official Rust SDK (`rmcp`)
-- MCP over stdio, implemented with the same SDK
+- MCP over Streamable HTTP
+- MCP over stdio
 - A bespoke REST/JSON API
-- A hand-rolled MCP JSON-RPC transport over HTTP
 
 ## Decision Outcome
 
-Chosen option: "MCP over Streamable HTTP with the official Rust SDK", because it
-is the only option that gives a standard agent contract, a long-running server
-and a single implementation of session handling without writing protocol code.
+Chosen option: "MCP over Streamable HTTP", because it is the only option that
+gives a standard agent contract and a long-running server that several clients
+can use over the life of the library.
 
 ### Consequences
 
-- Good, because any MCP client can connect, and the SDK carries capability
-  negotiation, session ids and SSE framing.
+- Good, because any MCP client can connect, and the protocol itself carries
+  capability negotiation, session ids and SSE framing.
 - Good, because one listener serves the tool surface and `/healthz`, so local
   operation and tests share a process model.
 - Bad, because sessions live in memory, so a restart forces every client to
@@ -107,15 +113,14 @@ and a single implementation of session handling without writing protocol code.
 - Bad, because a network listener without authentication must stay on loopback
   until an authentication decision is made; exposing it is now a security
   question rather than a configuration change.
-- Bad, because protocol revisions follow the SDK's release cadence, so the
-  product inherits its upgrade rhythm.
 - Bad, because SSE framing adds a failure mode that a stdio pipe does not have,
-  and the e2e driver must parse through the SDK rather than a raw HTTP body.
+  and the e2e driver must parse through a protocol client rather than a raw HTTP
+  body.
 
 ### Confirmation
 
-The two `@e2e` scenarios drive the product exclusively through the rmcp client
-over Streamable HTTP (`tests/steps/passage_retrieval_e2e.rs`), and
+The two `@e2e` scenarios drive the product exclusively through an MCP client over
+Streamable HTTP (`tests/steps/passage_retrieval_e2e.rs`), and
 `./run-tests.sh --prove-strictness` plus the e2e run prove that an undefined step
 or a broken session fails the build. A review checkpoint confirms that no route
 other than `/mcp` and `/healthz` is exposed and that the default bind is
@@ -123,19 +128,17 @@ loopback.
 
 ## Pros and Cons of the Options
 
-### MCP over Streamable HTTP with `rmcp`
+### MCP over Streamable HTTP
 
-- Good, because it is the standard agent interface and the SDK is official.
+- Good, because it is the standard agent interface.
 - Good, because several clients can use one server, and a second surface can
   reuse it.
 - Neutral, because it requires a port and therefore a bind-address decision.
-- Bad, because it makes a network listener part of the product's surface and
-  inherits the SDK's protocol cadence.
+- Bad, because it makes a network listener part of the product's surface.
 
-### MCP over stdio with `rmcp`
+### MCP over stdio
 
 - Good, because it needs no port, no bind address and no authentication story.
-- Good, because the SDK handles the protocol identically.
 - Bad, because one process serves one client for its lifetime, which does not fit
   a library server that outlives a conversation.
 - Bad, because readiness and remote agents cannot be reached through it.
@@ -148,16 +151,11 @@ loopback.
 - Bad, because it discards capability negotiation and session semantics that
   MCP already standardises.
 
-### A hand-rolled MCP JSON-RPC transport
-
-- Good, because it avoids an SDK dependency and its release cadence.
-- Bad, because session ids, SSE framing, capability negotiation and error shapes
-  would all be re-implemented and re-tested.
-- Bad, because the e2e driver would need the same hand-rolled client, doubling
-  the surface to maintain.
-
 ## More Information
 
 The tool schemas, tagged results and error taxonomy are specified in
-`givn/changes/passage-retrieval/design.md` (MCP Contract). The unauthenticated-listener risk
-is tracked in arc42 chapter 11.
+`givn/changes/passage-retrieval/design.md` (MCP Contract), and the SDK-versus-
+hand-rolled decision is specified in the same file (Technology Decisions › MCP
+SDK implementation). The unauthenticated-listener risk is tracked in arc42
+chapter 11 (R-006), the in-memory-session risk in R-005 and the SSE-parsing risk
+in R-007; the SDK release cadence is TD-005.

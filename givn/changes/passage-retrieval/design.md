@@ -20,8 +20,8 @@ scenarios.
 | Concern | Decision | Resolution / why |
 |---|---|---|
 | Language | Rust, edition 2024 | Given constraint of the topic (`frame.md`). One language for product, twins and fixtures keeps the fixture generators and the deterministic embedding twin in the same toolchain. |
-| Toolchain | Rust latest stable, pinned by `rust-toolchain.toml` at setup | Resolved at implementation time via rustup or, on this host, `nix shell nixpkgs#rustc nixpkgs#cargo`. The host's rustup `stable-x86_64-unknown-linux-gnu` currently fails with `libz.so.1: cannot open shared object file` (observed 2026-10-27), so the setup task must use the Nix-provided stable toolchain or the musl toolchain; it must record which one it pinned. |
-| Async runtime | `tokio` 1.x | The HTTP server, the MCP transport, the calibre client and the embedding client are all I/O-bound; one runtime avoids a second concurrency model. |
+| Toolchain | Rust stable, pinned by exactly one mechanism: the Nix flake devShell (`nix develop`), which provides `nixpkgs#rustc`, `nixpkgs#cargo` and `nixpkgs#calibre` | The host's rustup cannot be the pin: `rustup show` reports default host `x86_64-unknown-linux-musl`, no installed toolchain and no default (observed 2026-10-27), so `rustc` and `cargo` fail with "could not choose a version". There is no `rust-toolchain.toml`; the devShell is the single pin and the setup task records the versions it resolves. |
+| Async runtime | `tokio` 1.x | The HTTP server, the MCP transport, the `calibredb` child-process supervision and the embedding client are all I/O-bound; one runtime avoids a second concurrency model. |
 | HTTP server | `axum` 0.8.x | Mounts the MCP Streamable HTTP endpoint and `/healthz` on one listener and shares the same `tower` stack rmcp's server transport expects. |
 | MCP SDK | `rmcp` 3.8.x, features `server`, `transport-streamable-http-server`; the e2e client uses `client`, `transport-streamable-http-client-reqwest` | Official Rust SDK for the protocol. Hand-rolling JSON-RPC would re-implement session ids, capability negotiation and SSE framing that the SDK already tracks; the SDK also gives the e2e driver a real protocol client. |
 | MCP transport | Streamable HTTP on `/mcp` | See ADR-0002. stdio would tie one process to one client and cannot serve the forward-looking second surface; plain SSE is the legacy transport. |
@@ -37,9 +37,10 @@ scenarios.
 | Config | TOML file + `LESEFRUCHT__<SECTION>__<KEY>` environment overrides, `serde` | Tests set thresholds and freshness via environment without rewriting the file. |
 | Errors | `thiserror` 2.0 for typed errors, `anyhow` 1.0 in `main` | Typed result taxonomy is part of the MCP contract; `anyhow` is confined to process startup. |
 | IDs | `uuid` 1.29 for internal request ids, calibre book id as `WorkId` | The work identity is calibre's; ids the product invents must not compete with it. |
+| Library interface | The `calibredb` CLI as a child process: `calibredb list --with-library <url-or-path> --for-machine --fields all` for discovery, `calibredb export --with-library <url-or-path> --to-dir <tmp> --single-dir --formats <FMT> --dont-save-cover --dont-write-opf --dont-save-extra-files <id>` for edition bytes | This is the documented calibre interface and it works against a content-server URL as well as a local library path. `--fields all` is required for `languages`, `tags`, `pubdate`, `formats` and `last_modified`; `--for-machine` prints one JSON array of per-book objects. A remote `export` returns the format bytes over calibre's RPC and writes the file locally. Contact: `library.calibredb_binary` (default `calibredb`), `library.url` (`--with-library` value), and a per-invocation `library.timeout_ms`. A per-run temp directory holds exported bytes and is removed on success and on failure. There is no HTTP client to calibre and no `/ajax/books` call. |
 | Gherkin runner | `cucumber` 0.23 (`cucumber-rs`) | Rust runner for the project's only language; native `fail_on_skipped()` strict mode. |
 | Local infrastructure | `podman-compose` 1.6 on rootless `podman` 5.8 (verified on this host 2026-10-27) | Docker is not installed here; rootless podman gives the same isolated compose network. |
-| Twins | Two workspace binaries, `twins/calibre-content-server` and `twins/openai-compatible`, `axum` routers reused in-process by non-e2e tests | Behavioural twins (mutable library state, deterministic embeddings) rather than static stubs, so the stale-index scenario is expressible. |
+| Twins | One workspace binary, `twins/openai-compatible`, `axum` router reused in-process by non-e2e tests | The calibre side needs no twin: tests run the real `calibredb` against a fixture calibre library, so listing and export fidelity cannot drift from a fake. The embedding twin stays behavioural — its vector is a pure function of the input text — because an external model endpoint cannot be the test oracle. |
 | Coverage | `cargo llvm-cov` / `RUSTFLAGS=-C instrument-coverage` + `llvm-profdata` + `grcov` (Cobertura) | `grcov` is the piece that emits Cobertura; `llvm-cov export` cannot. Resolved from nixpkgs at setup. |
 
 No version above is from memory: every crate version was read from the
@@ -59,10 +60,24 @@ task.
 | Hand-rolled JSON-RPC | Re-implements session handling and SSE framing; the official SDK is the safer contract. |
 | Model-based query expansion now | Non-deterministic expansion would make the deterministic order and the e2e assertions depend on a model call. |
 
+### MCP SDK implementation (the canonical home for this decision)
+
+Using the official Rust SDK (`rmcp`) instead of a hand-rolled JSON-RPC transport
+is an implementation decision owned by this design, not a second architecture
+decision. The transport and process boundary are ADR-0002; the SDK is a
+dependency choice inside `mcp` and inside the e2e driver, so its rationale lives
+here and nowhere else. Gain: session ids, capability negotiation, error shapes
+and SSE framing are already implemented, and the e2e driver is a real protocol
+client. Cost: protocol revisions follow the SDK's release cadence (TD-005) and a
+second, handwritten client is not an option. Rejected: a hand-rolled MCP
+JSON-RPC transport over HTTP — Good, it has no dependency cadence; Bad, session
+ids, SSE framing and error shapes would all be re-implemented and re-tested, and
+the e2e driver would need the same hand-written client, doubling the surface.
+
 ## Module and Component Structure
 
-Workspace members: the `lesefrucht` package, `twins/calibre-content-server`,
-`twins/openai-compatible`, `xtask` (fixture generation, coverage helpers).
+Workspace members: the `lesefrucht` package, `twins/openai-compatible`, `xtask`
+(fixture generation including the fixture calibre library, coverage helpers).
 
 ```text
 src/
@@ -74,8 +89,8 @@ src/
     ids.rs                    WorkId, EditionId, PassageUid, ContentHash
     outcome.rs                QuestionOutcome, AbstentionReason, UnavailabilityReason
   library/
-    calibre.rs                content-server client (/ajax/books, /get/<fmt>/<id>)
-    discovery.rs              library listing -> Work + Edition candidates
+    calibredb.rs              calibredb child process: list/export, JSON parse, temp dirs
+    discovery.rs              listing -> Work + Edition candidates
     selection.rs              format preference, at most one selected edition per work
   indexing/
     pipeline.rs               discovery -> select -> extract -> chunk -> embed -> store
@@ -111,12 +126,12 @@ tests/
   features_runner.rs          cucumber entry point (harness = false)
   steps/passage_retrieval.rs      non-e2e step definitions
   steps/passage_retrieval_e2e.rs  @e2e step definitions
-  steps/support/{world.rs,twins.rs,fixtures.rs,mcp_client.rs}
+  steps/support/{world.rs,twin.rs,fixtures.rs,calibredb.rs,mcp_client.rs}
 twins/
-  calibre-content-server/     /ajax/books, /get/<fmt>/<id>, /__control/...
   openai-compatible/          /v1/models, /v1/embeddings (deterministic)
 xtask/
-  fixtures                    writes the EPUB/PDF/MOBI fixtures under tests/fixtures/library
+  fixtures                    writes EPUB/PDF/MOBI sources and builds the fixture
+                              calibre library with `calibredb add` (fixed mtimes)
 ```
 
 ```mermaid
@@ -127,11 +142,11 @@ flowchart LR
     RET["retrieval<br/>expand, scope, fuse, threshold"]
     CTX["retrieval::context<br/>read_passage"]
     IDX["indexing<br/>queue, extract, chunk, embed"]
-    LIB["library<br/>calibre client, selection"]
+    LIB["library<br/>calibredb client, selection"]
     IDXSTORE["index<br/>sqlite + tantivy + usearch + text"]
     DOM["domain<br/>Work, Edition, Passage, Citation, Question"]
   end
-  Calibre(["calibre content server"])
+  Calibre(["calibre library<br/>(content-server URL or path)"])
   Embed(["OpenAI-compatible endpoint"])
 
   Agent -->|"Streamable HTTP /mcp"| MCP
@@ -142,7 +157,7 @@ flowchart LR
   IDX --> LIB
   IDX --> Embed
   IDX --> IDXSTORE
-  LIB -->|"/ajax/books, /get/<fmt>/<id>"| Calibre
+  LIB -->|"calibredb list / calibredb export"| Calibre
   RET --> DOM
   CTX --> DOM
   IDX --> DOM
@@ -165,13 +180,13 @@ sequenceDiagram
   participant E as expansion
   participant L as lexical
   participant V as vector
-  participant C as library::calibre
+  participant C as library::calibredb
 
   A->>M: search_passages(claim, language, scope?, limit?)
   M->>S: validate + dispatch
   S->>St: index availability + freshness
   St-->>S: state, last_success_at, library_generation
-  S->>C: library listing (generation cache)
+  S->>C: calibredb list (generation cache)
   alt store unavailable or empty
     S-->>A: unavailable { reason: index_unavailable }
   else generation mismatch or too old
@@ -228,14 +243,14 @@ sequenceDiagram
 sequenceDiagram
   participant Boot as startup / requester
   participant Q as indexing::queue
-  participant Li as library
+  participant Li as library::calibredb
   participant X as extract
   participant Ch as chunk
   participant Em as embed
   participant St as index::store
   Boot->>Q: enqueue IndexEdition(work, edition)
-  Q->>Li: fetch edition bytes
-  Li-->>Q: bytes + content_hash
+  Q->>Li: calibredb export <id> --formats <FMT> --to-dir <tmp>
+  Li-->>Q: file in temp dir, removed after the commit
   Q->>St: recorded hash + state
   alt hash unchanged and indexed
     Q->>St: touch last_checked_at (no re-embed)
@@ -280,9 +295,13 @@ Citation  { work_id, edition_id, format, title, authors[], language, chapter: Ch
 
 Offsets are **Unicode scalar indices** into the edition's normalized text, not
 byte offsets, so a client can slice the text without guessing an encoding.
-`viewer_url` is `calibre://show-book/<library_id>/<work_id>`; the exact position
-is carried by `char_start`/`char_end`, so a viewer that cannot jump to a span
-still opens the right edition.
+`viewer_url` is `calibre://show-book/<library>/<work_id>` and opens the edition;
+it carries no position. The exact position is the character span
+`char_start`/`char_end`, and `read_passage` proves it: the returned text at the
+cited offsets is sliced from the stored edition text and its hash is checked
+against the passage record. A position-aware viewer opening
+(`calibre://view-book/...?open_at=...`) is deferred and tracked as TD-009 in
+arc42 chapter 11.
 
 ### Outcome types (the `Question` result)
 
@@ -290,10 +309,12 @@ still opens the right edition.
 QuestionOutcome =
   | CandidatePassages { requested, returned, short, expansion: Expansion,
                         passages: [ { citation, score, expansion: [string], text } ] }
-  | NoEvidence        { reason: no_evidence | unknown_work }
+  | NoEvidence        { reason: no_evidence | unknown_work,
+                        indexing?: IndexingSummary }
   | Unavailable       { reason: index_unavailable | stale_index | library_unreachable }
 
-Expansion { claim_tokens: [string], expanded_terms: [string] }
+Expansion       { claim_tokens: [string], expanded_terms: [string] }
+IndexingSummary { failed: [ { work_id, edition_id, format, reason } ] }
 ```
 
 Exactly one arm is produced per request. `no_evidence` and `unknown_work` are
@@ -301,6 +322,21 @@ abstentions; `unavailable` is an unavailability report. None of the three is an
 MCP error. Protocol errors are reserved for malformed requests
 (`invalid_arguments`) and for a citation that contradicts the index
 (`invalid_citation`).
+
+`indexing` is optional and present only when the library holds editions that
+failed indexing, so an abstention distinguishes a missing passage from a missing
+capability without a third tool (design-review Q1, decision B). It is a summary
+of the recorded failures relevant to the request — the editions of the works
+named by the scope, or every failed edition when the scope names none. It is not
+a library-status surface: the consumer learns about failures only as part of an
+abstention, and cannot enumerate them on demand.
+
+`requested` is the **clamped effective limit**, not the raw request. For
+`limit: 50`, `requested` is 20, `returned` is at most 20, and
+`short = returned < 20`; a full result therefore reports `requested: 20,
+returned: 20, short: false` even though the raw request was 50. A limit **above**
+`limit_max` is accepted and clamped; a limit below 1, or one that is not an
+integer, is `invalid_arguments`. Nothing is ever padded to reach `requested`.
 
 ### Index state and freshness
 
@@ -312,11 +348,13 @@ StoreState  = ready | indexing | empty | unavailable
 ```
 
 `library_generation` is a sha256 over the sorted `(work_id, format, last_modified)`
-triples of the calibre listing at the last successful index pass. Freshness is
+triples derived from the `calibredb list --for-machine --fields all` output at
+the last successful index pass (`formats` and `last_modified` are per-book fields
+of that JSON array). Freshness is
 `now - last_success_at <= index.freshness_bound` **and** the current generation
 equals the recorded one. The generation is read through a short cache
-(`index.generation_cache_ms`) so a burst of requests does not hammer the
-content server.
+(`index.generation_cache_ms`) so a burst of requests does not spawn a
+`calibredb list` per request.
 
 ### Storage layout
 
@@ -343,22 +381,49 @@ passage count differs from the lexical doc count or the vector map and marks
 them `invalidated`, which the queue re-indexes. This is the answer to "three
 stores, no cross-store transaction" (ADR-0001's accepted cost).
 
+Only the selected edition's passages are retrievable. When edition selection
+picks a different format for a work (a new format appears, or the preference
+order changes), `commit_edition` deletes the passages, lexical documents,
+vectors and stored text of the previously selected edition **in the same commit
+that writes the new edition**. The `editions` row of the de-selected edition
+keeps `selected = false` and `index_state = invalidated` so the deletion is
+visible, and the startup repair pass re-derives it if a crash interrupts the
+commit. Uniqueness therefore holds structurally: `(work_id, passage_index)`
+names exactly one passage, which is what lets the sort key stop at
+`passage_index`.
+
 ## Indexing Subfunction
 
-1. **Discovery.** `GET {library.base_url}/ajax/books` (JSON listing) yields
-   works with title, authors, languages, tags, pubdate and available formats.
+1. **Discovery.** `calibredb list --with-library {library.url} --for-machine
+   --fields all` prints one JSON array with one object per book. Each object
+   supplies the numeric `id` (the `WorkId`), `title`, `authors` as one string
+   (calibre joins multiple authors with ` & `, the documented convention this
+   slice splits on — a recorded limitation), `languages` and `tags` as arrays
+   (`genre.<class>` is read from the tags), `pubdate` as an ISO-8601 string and
+   `formats` as an array (the candidate editions). The invocation is bounded by
+   `library.timeout_ms`; a non-zero exit, a timeout or unparsable output is
+   `source_unreachable` and surfaces as `unavailable { reason:
+   library_unreachable }`.
 2. **Edition selection.** For each work, pick the first available format in
    `edition.format_preference` (default `epub`, `azw3`, `mobi`, `pdf`). Exactly
    one edition is selected per work.
-3. **Extraction.** `GET {library.base_url}/get/<FMT>/<id>` returns the bytes;
-   sha256 gives `content_hash`. EPUB → `rbook` chapters (spine order, TOC
-   titles); PDF → `pdf-extract` text split on form feeds, one chapter per page
-   group with no outline; AZW3/MOBI/other → `IndexingFailed(unsupported_format)`
-   immediately, without downloading.
+3. **Extraction.** `calibredb export --with-library {library.url} --to-dir
+   {tmp} --single-dir --formats <FMT> --dont-save-cover --dont-write-opf
+   --dont-save-extra-files <id>` writes the edition bytes into the run's temp
+   directory as one file (without `--single-dir`, calibre writes an
+   author/title directory tree, so the filename would not be predictable); the
+   product takes the single file whose extension matches the selected format,
+   reads it and removes the directory afterwards, on success and on failure. A
+   remote library returns the bytes over calibre's RPC, so the same command
+   serves a content-server URL and a local path. The
+   sha256 of the file gives `content_hash`. EPUB → `rbook` chapters (spine
+   order, TOC titles); PDF → `pdf-extract` text split on form feeds, one chapter
+   per page group with no outline; AZW3/MOBI/other →
+   `IndexingFailed(unsupported_format)` immediately, without exporting.
 4. **Chunking.** Per chapter, `text-splitter` splits at sentence boundaries to
    `chunk.max_chars` (default 1800) with `chunk.overlap_chars` (default 200).
    A passage never crosses a chapter boundary; `passage_index` is the ordinal
-   within the edition, so R3's "chunk index" is stable.
+   within the edition, so the passage index R3 orders by is stable.
 5. **Embedding.** Texts are embedded in `embedding.batch_size` batches against
    the configured endpoint. The response length must equal `embedding.dimension`;
    a mismatch is `IndexingFailed(embedding_failed)`, never a silently padded
@@ -366,9 +431,11 @@ stores, no cross-store transaction" (ADR-0001's accepted cost).
 6. **Skip.** An edition whose `content_hash` equals the recorded one and whose
    state is `indexed` is not re-extracted and not re-embedded.
 7. **Status.** `GET /healthz` exposes `indexed_editions`, `failed_editions`,
-   `last_success_at`, `library_generation` and `index_state`. Failures carry
-   their reason; the e2e fixture asserts the unsupported-format failure is
-   visible.
+   `last_success_at`, `library_generation` and `index_state` for the operator
+   and for test readiness. The agent does not read `/healthz`: a failed edition
+   reaches the agent through the optional `indexing` summary of an abstention
+   (Outcome types), which is the consumer-visible form of the same recorded
+   failure. There is no agent surface that enumerates failures on demand.
 
 Formats supported in this change: **EPUB (EPUB 2/3) and PDF**. Formats that
 fail explicitly: **AZW3, MOBI and anything else** — `unsupported_format`.
@@ -407,13 +474,18 @@ the default.
   The threshold is configuration; tests set it through the environment.
 - **Fusion.** Reciprocal Rank Fusion, `score = Σ 1/(rrf_k + rank)`, `rrf_k`
   default 60.
-- **Deterministic order.** Sort by `(fused_score desc, work_id asc,
-  passage_index asc)`. No other tiebreaker is needed because `(work_id,
+- **Deterministic order.** Sort by `(fused_score desc, work_id numeric asc,
+  passage_index asc)`. `WorkId` is a calibre book id, so it is numeric even
+  though it is carried as a string: `"9"` sorts before `"10"`, not after it, and
+  the glossary records this collation. No further tiebreaker is needed because
+  only the selected edition's passages are retrievable, so `(work_id,
   passage_index)` is unique per passage.
 - **Cap and short.** `effective_limit = clamp(limit.unwrap_or(limit_default),
-  1, limit_max)` with `limit_max = 20`; `short = passages.len() <
-  effective_limit`. A request of 50 is clamped, not rejected, and the result is
-  not short because the effective limit is 20 (scenario 8).
+  1, limit_max)` with `limit_max = 20`; the result reports `requested =
+  effective_limit`, `returned = passages.len()` and `short = returned <
+  requested`. A request of 50 is clamped, not rejected: the result reports
+  `requested: 20`, `returned: 20`, `short: false` when twenty candidates exist
+  (scenario 8), and `returned < 20` with `short: true` otherwise.
 
 ### Scope resolution
 
@@ -422,11 +494,15 @@ resolved against the `works` table (the mirror of the last library listing):
 
 - `genre` matches `works.genre` (`fachbuch`, `sachbuch`, `belletristik`,
   `sonstiges`); the calibre tag `genre.<class>` is the source.
-- `language`, `authors`, `year_*` filter the same table.
-- `work_ids`: **any** id absent from the library yields
-  `NoEvidence { reason: unknown_work }` before any path runs. This is the
-  strict reading of extension 1a: no passage outside the library can be
-  returned even partially.
+- `language` is a BCP-47 tag and matches after calibre's language codes are
+  mapped (`deu` → `de`, `eng` → `en`); `authors` and `year_*` filter the same
+  table, `year_*` against `pubdate`.
+- `work_ids`: every entry must be a numeric calibre book id. A non-numeric entry
+  is a malformed request (`invalid_arguments`); **any** valid id absent from the
+  library yields `NoEvidence { reason: unknown_work }` before any path runs.
+  This is the strict reading of extension 1a: no passage outside the library can
+  be returned even partially. Scenario 4 uses `"999"`, a well-formed id the
+  fixture library does not hold.
 - Filter combination is AND across fields, OR within `authors`.
 
 ## MCP Contract
@@ -481,10 +557,18 @@ Output: `structuredContent` is one tagged object.
 ```json
 { "kind": "no_evidence", "reason": "no_evidence" }
 { "kind": "no_evidence", "reason": "unknown_work" }
+{ "kind": "no_evidence", "reason": "no_evidence",
+  "indexing": { "failed": [ { "work_id": "5", "edition_id": "calibre:5:mobi",
+                              "format": "mobi",
+                              "reason": "unsupported_format" } ] } }
 { "kind": "unavailable", "reason": "index_unavailable" }
 { "kind": "unavailable", "reason": "stale_index" }
 { "kind": "unavailable", "reason": "library_unreachable" }
 ```
+
+`indexing` is omitted when no relevant edition failed. It is never present on a
+`candidate_passages` or `unavailable` result, and it adds no third tool: the MCP
+contract stays at `search_passages` and `read_passage`.
 
 A short text block repeats the outcome kind and passage count for token-frugal
 clients; the structured object is authoritative.
@@ -522,9 +606,9 @@ verbatim" is enforced rather than asserted.
 
 | Condition | Shape |
 |---|---|
-| Missing/invalid argument | JSON-RPC error `-32602`, `isError: true` |
-| Unknown `edition_id` or `passage_index` | JSON-RPC error `-32602` with `data.reason = invalid_citation` |
-| Threshold, unknown work, unavailable/stale index | Tagged result, `isError` absent |
+| Missing or empty `claim`, missing `language`, non-integer or `< 1` `limit`, non-numeric `work_ids` entry | JSON-RPC error `-32602`, `isError: true`, `data.reason = invalid_arguments` |
+| Unknown `edition_id` or `passage_index` | JSON-RPC error `-32602`, `isError: true`, `data.reason = invalid_citation` |
+| Threshold, unknown work, unavailable/stale index, unreachable library | Tagged result, `isError` absent |
 
 ## Configuration
 
@@ -538,8 +622,10 @@ bind = "127.0.0.1:8787"
 path = "/mcp"
 
 [library]
-base_url = ""                 # REQUIRED, no default
-timeout_ms = 5000
+calibredb_binary = "calibredb"  # resolved from PATH in the devShell
+url = ""                      # REQUIRED, no default: --with-library value
+                              # (content-server URL or library path)
+timeout_ms = 30000
 
 [edition]
 format_preference = ["epub", "azw3", "mobi", "pdf"]
@@ -578,12 +664,13 @@ vector_overfetch = 4
 max_window_chars = 4000
 ```
 
-Startup fails with a named configuration error when `library.base_url`,
+Startup fails with a named configuration error when `library.url`,
 `embedding.base_url`, `embedding.model` or a positive `embedding.dimension` is
-missing. There is no default endpoint anywhere: the outbound boundary is
-configuration, not convention. Tests set `lexical_min_score`,
-`vector_min_cosine`, `index.freshness_bound_hours` and
-`index.generation_cache_ms` through the environment.
+missing, and when `library.calibredb_binary` cannot be executed. There is no
+default endpoint anywhere: the outbound boundary is configuration, not
+convention. Tests set `lexical_min_score`, `vector_min_cosine`,
+`index.freshness_bound_hours` and `index.generation_cache_ms` through the
+environment, and point `library.url` at the fixture calibre library.
 
 ## Test Runner, Strict Mode and Single-Scenario Command
 
@@ -595,29 +682,42 @@ name = "features_runner"
 harness = false
 ```
 
-`tests/features_runner.rs` builds the runner over both feature roots and fails
-on any skipped step:
+`tests/features_runner.rs` parses the cucumber CLI into its `Opts` and lets the
+Basic parser walk the `givn` directory:
 
 ```rust
 #[tokio::main]
 async fn main() {
-    let feature_roots = ["givn/specs/**/*.feature", "givn/changes/*/specs/**/*.feature"];
     World::cucumber()
         .fail_on_skipped()
-        .with_cli(Cli::from_args())
-        .run_and_exit(feature_roots)
+        .with_cli(cucumber::cli::Opts::<_, _, _>::parsed())
+        .run_and_exit("givn")
         .await;
 }
 ```
 
-- **Strict mode:** `Cucumber::fail_on_skipped()` (verified present in
-  cucumber 0.23, docs.rs, 2026-10-27). Any skipped or undefined step fails the
-  run; no scenario is tagged `@allow.skipped`, which is the tag that would
-  exempt it. An undefined step therefore exits non-zero — RED is automatic.
-- **Proof of strictness:** `./run-tests.sh --prove-strictness` runs
-  `tests/fixtures/strictness.feature`, which contains one scenario whose step
-  is deliberately unbound, and asserts a non-zero exit. This is the setup
+- **API:** cucumber 0.23 exposes `cucumber::cli::Opts` and
+  `Opts::<_, _, _>::parsed()` (verified from the crate source, `tests/wait.rs`
+  and `src/cli.rs`, 2026-10-27). There is no `cli::Cli` type; `Cli::from_args`
+  does not exist.
+- **Feature roots:** `run_and_exit` takes exactly one `I: AsRef<Path>` (crate
+  source `src/cucumber.rs`). Passing the directory `"givn"` makes the Basic
+  parser walk it, and both the durable specs (`givn/specs`) and every change
+  delta (`givn/changes/*/specs`) are below it, so no array and no glob string is
+  passed. A merged change is picked up without a configuration edit.
+- **Strict mode:** `Cucumber::fail_on_skipped()` (crate source
+  `src/cucumber.rs`, 2026-10-27). Any skipped or undefined step fails the run;
+  no scenario carries `@allow.skipped`, the tag that would exempt it. An
+  undefined step therefore exits non-zero — RED is automatic.
+- **Proof of strictness:** `./run-tests.sh --prove-strictness` runs the runner
+  with `--input tests/fixtures/strictness.feature` — `--input` is the Basic
+  parser's glob/path option (`src/parser/basic.rs`), which is how a feature
+  outside the `givn` root is selected — and asserts a non-zero exit. The feature
+  contains one scenario whose step is deliberately unbound. This is the setup
   task's evidence, not a claim.
+- **`--name` and `--tags` conflict:** `src/cli.rs` declares
+  `conflicts_with = "name"` on `--tags`, so a command may use one or the other,
+  never both. `--name` alone selects by scenario title (a regex).
 - **`verify.command`:** `./run-tests.sh`, which runs
   `cargo test --test features_runner -- --tags 'not @e2e'` under coverage
   instrumentation.
@@ -625,17 +725,12 @@ async fn main() {
   stack up (E2E Infrastructure), runs
   `cargo test --test features_runner -- --tags '@e2e'`, then tears the stack
   down.
-- **Exact single-scenario command** (non-e2e):
-  `cargo test --test features_runner -- --name '^Scope restricts passages to the named genre$' --tags 'not @e2e'`
-- **Exact single-scenario command** (`@e2e`):
-  `cargo test --test features_runner -- --name '^Agent retrieves cited passages for a claim$' --tags '@e2e'`
-  (after `podman-compose -f compose.e2e.yaml up -d --build` and readiness).
-- The `--name` (regex) and `--tags` (tag expression) flags are the cucumber-rs
-  CLI flags, confirmed from the cucumber book on 2026-10-27.
-- **Feature paths** are the two roots above: the durable specs under
-  `givn/specs/**` and every change delta under `givn/changes/*/specs/**`. The
-  runner reads them from code, not from `commands.yaml`, so a merged change is
-  picked up without a configuration edit.
+- **Exact single-scenario command** (non-e2e, title only, because `--name`
+  cannot be combined with `--tags`):
+  `cargo test --test features_runner -- --name '^Scope restricts passages to the named genre$'`
+- **Exact single-scenario command** (`@e2e`, after the compose stack is up and
+  its readiness is met):
+  `cargo test --test features_runner -- --name '^Agent retrieves cited passages for a claim$'`
 
 ## Step Definitions
 
@@ -654,14 +749,22 @@ phrase it binds must be merged into the permanent file above before archive;
 the delta copy is history, never the home.
 
 Shared support: `tests/steps/support/world.rs` (world state and scenario
-lifecycle), `tests/steps/support/twins.rs` (mounts the twin routers on
-ephemeral ports for non-e2e), `tests/steps/support/fixtures.rs` (fixture
-library), `tests/steps/support/mcp_client.rs` (the rmcp client used by the e2e
-steps). Support modules are not step files and bind no phrases.
+lifecycle), `tests/steps/support/twin.rs` (mounts the embedding twin router on
+an ephemeral port for non-e2e), `tests/steps/support/fixtures.rs` (fixture
+sources and the fixture calibre library), `tests/steps/support/calibredb.rs`
+(the real CLI invocations used to build and mutate that library),
+`tests/steps/support/mcp_client.rs` (the rmcp client used by the e2e steps).
+Support modules are not step files and bind no phrases.
 
-Step bodies are never empty. In RED, a new step body is `unimplemented!()`;
-`cargo clippy` plus the strict-mode run makes an empty body fail, because an
-empty body would pass the step and the scenario would not be RED.
+Step bodies are never empty. In RED, a new step body is `unimplemented!()` (or
+`todo!()`), so the step executes and panics and the scenario cannot pass. An
+empty body would return `Ok(())` and pass the step, which `fail_on_skipped()`
+does not catch — clippy has no default empty-function lint and does not make an
+empty body fail. The enforced guard is therefore two-part: the
+`unimplemented!()`/`todo!()` convention, plus a CI grep for step definitions
+whose body is empty, whitespace-only, `{}` or `()`. The grep is named in the
+strictness proof (`./run-tests.sh --prove-strictness`) and runs in
+`verify.command`.
 
 ## E2E Infrastructure
 
@@ -671,28 +774,34 @@ empty body would pass the step and the scenario would not be RED.
   `structuredContent`. No HTTP call to an internal route is used as a
   substitute: `/healthz` is only a readiness and index-status probe.
 - **Product process:** the container image built from this repository, started
-  by `compose.e2e.yaml` with `LESEFRUCHT__LIBRARY__BASE_URL` and
-  `LESEFRUCHT__EMBEDDING__BASE_URL` pointing at the twins.
-- **Digital twin 1 — calibre content server** (`twins/calibre-content-server`):
-  serves `/ajax/books` from the fixture library, `/get/<FMT>/<id>` with the
-  fixture bytes, and a control surface under `/__control/` used only by tests
-  (`POST /__control/library-state` to bump the library generation for the stale
-  scenario, `GET /__control/state` to read metadata and index-relevant facts for
-  the "library is unchanged" scenario). Deterministic: no clock, no randomness,
-  fixtures baked at image build.
-- **Digital twin 2 — OpenAI-compatible endpoint** (`twins/openai-compatible`):
+  by `compose.e2e.yaml` with `LESEFRUCHT__LIBRARY__URL` pointing at the fixture
+  calibre library inside the image and `LESEFRUCHT__EMBEDDING__BASE_URL`
+  pointing at the embedding twin.
+- **Library under test — real `calibredb`, no twin:** the image installs calibre
+  from the same pinned nixpkgs revision as the development shell, and the
+  fixture calibre library is built at image build time by `xtask fixtures`,
+  which writes the fixture sources and adds them with `calibredb add` at fixed
+  mtimes. The product therefore discovers through
+  `calibredb list --for-machine --fields all` and reads bytes through
+  `calibredb export` exactly as in production; there is no calibre HTTP twin and
+  no HTTP route to keep in step with calibre.
+- **Digital twin — OpenAI-compatible endpoint** (`twins/openai-compatible`):
   `/v1/models` and `/v1/embeddings`. The embedding is a pure function of the
   input text (token hashing into a fixed `dimension`), so the same text always
   yields the same vector and the two paths agree deterministically.
 - **Fixture editions** (generated by `xtask fixtures` from reviewable text, so
-  the repository holds text plus a generator, not opaque binaries):
-  - `work-1` German EPUB, genre `fachbuch`, 3 chapters, chapter 2 contains the
-    claim sentence.
-  - `work-2` English EPUB, genre `fachbuch`, contains the English mirror
-    ("trust ... repeated interaction") — proves cross-language retrieval through
-    the configured synonym `Vertrauen -> trust`.
-  - `work-3` German EPUB, genre `sachbuch`, contains the same claim — the scope
-    scenario's out-of-scope work.
+  the repository holds text plus a generator, not opaque binaries; every book
+  also carries the calibre metadata the scope scenarios read — title, authors,
+  language, `genre.<class>` tag, `pubdate` — so the listing is realistic):
+  - `work-1` German EPUB, genre `fachbuch`, author "Anna Beispiel", pubdate
+    2001, 3 chapters, chapter 2 contains the claim sentence.
+  - `work-2` English EPUB, genre `fachbuch`, author "Clara Example", pubdate
+    2005, contains the English mirror ("trust ... repeated interaction") —
+    proves cross-language retrieval through the configured synonym
+    `Vertrauen -> trust`.
+  - `work-3` German EPUB, genre `sachbuch`, author "Bernd Beispiel", pubdate
+    2012, contains the same claim — the scope scenario's out-of-scope work and
+    the second author/year for the author-and-year scope scenario.
   - `work-4` German PDF, genre `sachbuch` — PDF extraction.
   - `work-5` German MOBI only — `IndexingFailed(unsupported_format)`.
   - `work-6` German EPUB with 4 chapters containing one rare term — the short
@@ -700,18 +809,46 @@ empty body would pass the step and the scenario would not be RED.
   - `work-7` German EPUB with 30 chapters matching the claim — the cap
     (request 50 → 20).
   - `work-8` German EPUB with none of the probe terms — the no-evidence case.
+- **Expansion configuration:** both stacks set
+  `LESEFRUCHT__EXPANSION__SYNONYMS_FILE` to
+  `tests/fixtures/synonyms.toml`, whose only entry is
+  `"Vertrauen" = ["trust"]`. Without it work-2 is unreachable from the German
+  claim and the cross-language assertion has nothing to prove.
 - **Readiness:** compose health checks wait for `/healthz` 200 on the product
-  and 200 on both twins. The scenarios additionally wait until `/healthz`
+  and on the embedding twin. The scenarios additionally wait until `/healthz`
   reports `indexed_editions >= 6` and `index_state = ready` (bounded by a
   timeout); an unsupported-format failure must be present in
-  `failed_editions`.
+  `failed_editions`. This is readiness only — no scenario asserts `/healthz` as
+  its outcome.
 - **Teardown:** `./run-tests.sh --e2e` always runs
   `podman-compose -f compose.e2e.yaml down -v` in a trap, so no state survives
   between runs and no port stays bound.
 - **Isolation:** one compose network `lesefrucht-e2e`; the only published ports
-  are loopback-bound (8787 product, 8788 calibre twin, 8789 embedding twin);
-  the product reaches the twins by service name inside the network, and no
-  outbound endpoint outside the network is configured.
+  are loopback-bound (8787 product, 8789 embedding twin); the product reaches
+  the embedding twin by service name inside the network, and no outbound
+  endpoint outside the network is configured. The library is a local fixture
+  path inside the product container, so nothing on the network represents
+  calibre.
+- **Test infrastructure (non-e2e):** the real `calibredb` against a fresh
+  fixture calibre library created per test run in a temp directory by
+  `xtask fixtures` (same generator as the e2e image, fixed mtimes). The setup
+  task installs calibre through the Nix development shell, so `calibredb` is
+  present on the test host and in the image. No calibre HTTP twin exists and no
+  behavioural twin replaces the CLI; the only remaining twin is the embedding
+  endpoint, which is an HTTP process boundary and could not be replaced by a
+  real service in a hermetic test.
+- **Exact stale-index controls:**
+  - *Older than the freshness bound:* the scenario runs with
+    `LESEFRUCHT__INDEX__FRESHNESS_BOUND_HOURS=0`, so the recorded
+    `last_success_at` is already outside the bound and the next request reports
+    `stale_index`. No clock is mocked.
+  - *Generation mismatch:* the scenario runs with
+    `LESEFRUCHT__INDEX__GENERATION_CACHE_MS=0` and mutates the fixture library
+    through the documented CLI (`calibredb set_metadata --with-library <fixture>
+    --field title`), which changes `last_modified` in the next `calibredb list`
+    output and therefore the generation.
+  - Both controls act on the same recorded state that production reads; neither
+    edits the SQLite file directly.
 - **Interface obstacles and their named fixes:**
   - *MCP session continuity:* Streamable HTTP requires `Mcp-Session-Id` after
     `initialize`. Fix: the e2e steps use rmcp's client transport, which manages
@@ -724,10 +861,11 @@ empty body would pass the step and the scenario would not be RED.
     `empty`. Fix: the `Given ... indexed` step polls `/healthz` for
     `indexed_editions` before the first tool call; the product never blocks a
     retrieval on indexing.
-  - *Stale generation:* the twin changes the library listing while the product
-    caches the generation. Fix: the stale scenario runs with
-    `LESEFRUCHT__INDEX__GENERATION_CACHE_MS=0` and bumps the twin state before
-    the request.
+  - *Stale generation:* the fixture library changes while the product caches
+    the generation. Fix: the scenario runs with
+    `LESEFRUCHT__INDEX__GENERATION_CACHE_MS=0` and mutates the fixture library
+    through `calibredb set_metadata` before the request, so the next
+    `calibredb list` reports a different `last_modified`.
   - *Deterministic numbers:* BM25 and cosine values must not be asserted
     exactly. Fix: assertions use the ordering, the counts, the `short` flag and
     the tagged outcome; scores are asserted only to be finite and non-negative.
@@ -736,15 +874,15 @@ empty body would pass the step and the scenario would not be RED.
 
 | Inventory entry | @e2e scenario title | Real interface | Driving mechanism |
 |---|---|---|---|
-| submit a claim or phrase with an optional scope | Agent retrieves cited passages for a claim | HTTP API (MCP JSON-RPC over Streamable HTTP) | rmcp `StreamableHttpClientTransport` over reqwest against `http://127.0.0.1:8787/mcp`: `initialize`, then `tools/call` `search_passages` with claim "Vertrauen in Organisationen", `language: de`, `scope.genre: fachbuch`, `limit: 5`; assert the `candidate_passages` arm, ≤5 passages, each citation's edition indexed, deterministic order. |
-| request wider context around a cited passage | Agent widens context around a cited passage | HTTP API (MCP JSON-RPC over Streamable HTTP) | The same rmcp client: take `edition_id` and `passage_index` from the citation returned by `search_passages`, then `tools/call` `read_passage` with `window_chars: 400`; assert the `passage_context` arm, exact bounds, and that the cited text occurs verbatim at `cited.start_char..cited.end_char`. |
+| submit a claim or phrase with an optional scope | Agent retrieves cited passages for a claim | HTTP API (MCP JSON-RPC over Streamable HTTP) | rmcp `StreamableHttpClientTransport` over reqwest against `http://127.0.0.1:8787/mcp`: `initialize`, then `tools/call` `search_passages` with claim "Vertrauen in Organisationen", `language: de`, `scope.genre: fachbuch`, `limit: 5`; assert the `candidate_passages` kind, at least one and at most five passages, `short == (returned < requested)`, each citation's edition indexed, at least one citation from an English edition, `expanded_terms` containing `trust`, and the deterministic order. |
+| request wider context around a cited passage | Agent widens context around a cited passage | HTTP API (MCP JSON-RPC over Streamable HTTP) | The same rmcp client: take the citation returned by `search_passages`, then `tools/call` `read_passage` with `window_chars: 400`; assert the `passage_context` arm, that the returned text at `cited.start_char..cited.end_char` equals the cited passage text, that `bounds.start_char <= cited.start_char < cited.end_char <= bounds.end_char`, and that the bounds chapter equals the cited chapter. |
 
 ## Local Runnability
 
 - **One command:** `./dev-up.sh` → `podman-compose -f compose.dev.yaml up -d
-  --build`. It starts the product, the calibre content-server twin and the
-  OpenAI-compatible twin in the isolated `lesefrucht-dev` network, with the
-  fixture library mounted read-only into the calibre twin.
+  --build`. It starts the product and the OpenAI-compatible twin in the
+  isolated `lesefrucht-dev` network, with the fixture calibre library mounted
+  read-only at the path the product passes to `calibredb --with-library`.
 - **Manual probe:** `curl -s http://127.0.0.1:8787/healthz` and an MCP
   `initialize` + `search_passages` with any MCP client.
 - **Down:** `./dev-down.sh` → `podman-compose -f compose.dev.yaml down -v`.
@@ -790,6 +928,17 @@ reader the citation must hold up for). No screenshots or transcripts are
 committed; API-only capabilities are exempt from visual evidence, and their
 assertions are on the response.
 
+### Persona dispositions
+
+| Persona | Disposition | Relevance and evidence |
+|---|---|---|
+| `agent--for-reader` | Direct, the caller | Relevance: abstention must be distinguishable and the order deterministic. Evidence: the tagged-outcome contract, the `short` flag, the `indexing` summary, the deterministic sort key, and the two `@e2e` scenarios. |
+| `reader--researcher` | Direct, the reader served | Relevance: the citation must carry the exact position. Evidence: character offsets as the authoritative span, `read_passage` proving the span by hash, and the widening scenario's bounds assertions. The position-aware viewer opening is deferred (TD-009). |
+| `rights--holder` | Boundary lens, not a Persona of this use case | Relevance: book text may leave the host only to configured endpoints. Evidence: `library.url` and `embedding.base_url` are required configuration with no default (chapter 2, chapter 8), and the e2e network configures only the embedding twin — `calibredb` runs against a local path. |
+| `custodian--metadata` | Not relevant to this slice | This change never writes to calibre: the CLI calls are `list` and `export`, both read-only. No proposal, provenance or write-queue path exists yet. |
+| `custodian--glossary` | Not relevant to this slice | The glossary table is read-only and empty; the only expansion source is the configured synonym file, and no term can be accepted here. |
+| `upstream--calibre` | Relevant, satisfied by construction | Relevance: only documented contracts. Evidence: discovery and export go through `calibredb list`/`calibredb export` — the documented CLI — and no code reads `metadata.db` or an internal HTTP route. |
+
 ## Decisions
 
 The proposal records no unresolved `D<n>`. Every seed question is dispositioned
@@ -801,19 +950,22 @@ here with its seed reference, and the one domain refinement is resolved.
 | Decides Q1 (seed Q1) | Product boundary: evidence or answer | The cited answer is a product goal; this change is its evidence side and returns no prose. The MCP contract has no composition tool, and no design section composes text beyond the retrieved passage and its surrounding window. | MCP Contract, Use-Case Traceability |
 | Decides Q2 (seed Q2) | Name of the classification | `Genre` with the value set `fachbuch`, `sachbuch`, `belletristik`, `sonstiges`; the calibre tag namespace is `genre.<class>`. | Retrieval › Scope resolution, Data Model › Domain types |
 | Decides Q3 (seed Q3) | Acceptance of a cited answer | Out of scope: no answer is composed, so no per-sentence judge applies. | MCP Contract |
-| Decides Q4 (seed Q4) | Autonomous classification write | Out of scope: this change never writes to calibre. | Indexing Subfunction (read-only content-server access) |
+| Decides Q4 (seed Q4) | Autonomous classification write | Out of scope: this change never writes to calibre. | Indexing Subfunction (read-only `calibredb list`/`export`) |
 | Decides Q5 (seed Q5) | Write safety with the desktop open | Out of scope: no calibre write path exists. Indexing uses an in-memory single-consumer queue; the durable calibre write queue arrives with the first writing change. | Indexing Subfunction, Data Model › Consistency |
 | Decides Q6 (seed Q6) | Language of answer and quotations | Out of scope for answers; passages are returned in their source language verbatim, which is the only language rule this slice fixes. | MCP Contract › `search_passages` |
 | Decides Q7 (seed Q7) | Glossary authority | Out of scope: no term can be accepted here; the glossary table is read-only and empty. | Retrieval › Expansion |
 | Decides Q8 (seed Q8) | Classification as a goal | Out of scope: the genre is read from an existing tag. | Retrieval › Scope resolution |
 | R1 (refinement) | The `Question` outcome includes candidate passages | A `Question` resolves to exactly one candidate-passage result, one abstention with its reason, or one unavailability report. Same aggregate, no new term. | Data Model › Outcome types, `usecase.md` "Result shapes", glossary |
 | T1 | Index composition | Tantivy + usearch + SQLite behind one store facade; ADR-0001. | Technology Decisions › Stack, Data Model › Storage layout |
-| T2 | Agent transport | MCP Streamable HTTP via rmcp; ADR-0002. | Technology Decisions › Stack, MCP Contract |
+| T2 | Agent transport | MCP Streamable HTTP; ADR-0002. The SDK implementation (`rmcp` vs hand-rolled JSON-RPC) is a design decision, not an ADR. | Technology Decisions › Stack, Technology Decisions › MCP SDK implementation, MCP Contract |
 | T3 | Expansion source | Deterministic only (glossary + configured synonyms) in this slice; model expansion deferred. | Retrieval › Expansion |
 | T4 | Supported formats | EPUB and PDF extract; AZW3/MOBI and others fail explicitly. | Indexing Subfunction |
 | T5 | Passage identity | Content-hash + chapter + ordinal + offsets, so re-indexing is idempotent. | Data Model › Domain types, Indexing Subfunction |
 | T6 | Offsets | Unicode scalar indices into the stored normalized text. | Data Model › Domain types, MCP Contract › `read_passage` |
-| T7 | Cap behaviour | `limit` above 20 is clamped, not rejected; `short` compares against the clamped limit. | Retrieval › Paths, scope, fusion |
+| T7 | Cap behaviour | `limit` above 20 is clamped, not rejected; `requested` is the clamped limit and `short = returned < requested`. | Retrieval › Paths, scope, fusion, Data Model › Outcome types |
+| T8 | Library discovery and edition bytes (design-review Q2, decision D2/A) | `calibredb list --for-machine --fields all` for discovery and `calibredb export` for bytes; no HTTP calibre client and no `/ajax/books`. | Technology Decisions › Stack (Library interface), Indexing Subfunction steps 1 and 3 |
+| T9 | Indexing visibility (design-review Q1, decision D1/B) | The `no_evidence` outcome carries an optional `indexing` summary of failed editions and reasons; the MCP contract stays at two tools and no `library_status` tool is added. | Data Model › Outcome types, MCP Contract › `search_passages`, Indexing Subfunction step 7 |
+| T10 | Citation position (design-review Q3, decision D3/B) | Character offsets are authoritative and `read_passage` proves the span; `viewer_url` opens the edition. Position-aware viewer opening is deferred as TD-009 with its resolution condition. | Data Model › Domain types, MCP Contract › `read_passage`, arc42 chapter 11 TD-009 |
 
 ## Use-Case Traceability
 
@@ -821,49 +973,84 @@ here with its seed reference, and the one domain refinement is resolved.
 |---|---|---|
 | Goal — the agent holds candidate passages for a claim, each with a citation | Retrieval › Paths, scope, fusion, and MCP Contract › `search_passages` (`candidate_passages` arm) | Agent retrieves cited passages for a claim |
 | Trigger — claim or phrase with optional scope | MCP Contract › `search_passages` input schema, Retrieval › Scope resolution | Agent retrieves cited passages for a claim |
-| Precondition — library reachable, at least one edition indexed, one language | Indexing Subfunction (discovery), Data Model › Index state and freshness (readiness), MCP Contract › `search_passages` (`language` required) | Agent retrieves cited passages for a claim (readiness gate in the Given) |
+| Precondition — one language, normally a reachable library with an indexed edition | Indexing Subfunction (discovery), Data Model › Index state and freshness (readiness), MCP Contract › `search_passages` (`language` required) | Agent retrieves cited passages for a claim (readiness gate in the Given) |
 | Main flow step 1 — accept the request | MCP Contract › `search_passages` validation, protocol error on malformed input | Agent retrieves cited passages for a claim |
 | Main flow step 2 — expand through glossary then configured expansion | Retrieval › Expansion | Agent retrieves cited passages for a claim (expansion `trust` visible in the result) |
 | Main flow step 3 — both paths, scope before fusion | Retrieval › Paths, scope, fusion, Retrieval › Scope resolution | Agent retrieves cited passages for a claim |
 | Main flow step 4 — at most the requested number, each with citation, score, expansion | Retrieval › Paths, scope, fusion (`cap` and `short`), MCP Contract › `search_passages` | Agent retrieves cited passages for a claim |
 | Main flow step 5 — wider context with exact bounds | MCP Contract › `read_passage`, Runtime Flows › `read_passage` | Agent widens context around a cited passage |
-| Success guarantee — deterministic order | Retrieval › Paths, scope, fusion sort key | Agent retrieves cited passages for a claim (order assertion) |
-| Minimal guarantee — no passage outside its citation | Data Model › Domain types (offsets), MCP Contract › `read_passage` (sha256 check) | Agent widens context around a cited passage |
-| Minimal guarantee — failure is never an empty success | Data Model › Outcome types (tagged outcomes), MCP Contract › Errors | An unavailable or stale index yields an unavailability report; No passage above the threshold yields no evidence |
+| Success guarantee — deterministic order and widening with exact bounds | Retrieval › Paths, scope, fusion sort key; MCP Contract › `read_passage` | Agent retrieves cited passages for a claim (order assertion); Agent widens context around a cited passage |
+| Minimal guarantee — no passage outside its citation | Data Model › Domain types (offsets), MCP Contract › `read_passage` (sha256 check) | Agent widens context around a cited passage; A returned citation resolves to the passage it cites |
+| Minimal guarantee — failure is never an empty success | Data Model › Outcome types (tagged outcomes), MCP Contract › Errors | A stale index yields an unavailability report; An unavailable index yields an unavailability report; No passage above the threshold yields no evidence |
 | Minimal guarantee — library, metadata, glossary unchanged | MCP Contract (read-only tools); Indexing Subfunction (writes only derived data) | A retrieval never changes the library |
 | R1 — every passage cites an indexed edition | Data Model › Domain types (`Citation`), Retrieval › Paths, scope, fusion (candidates come from the index only) | Agent retrieves cited passages for a claim |
 | R2 — only passages retrieved for this request | Retrieval › Paths, scope, fusion per-request query, no shared result cache | Agent retrieves cited passages for a claim |
-| R3 — order: score, work id, passage index | Retrieval › Paths, scope, fusion sort key | Agent retrieves cited passages for a claim |
+| R3 — order: score, numeric work id, passage index | Retrieval › Paths, scope, fusion sort key | Agent retrieves cited passages for a claim (order assertion) |
 | R4 — capped at the requested number, at most 20 | Retrieval › Paths, scope, fusion `effective_limit`, `short` | The result is capped at twenty passages; Fewer passages than requested are returned short |
 | R5 — no judgement whether a passage supports the claim | MCP Contract has no support/verdict field; scores are retrieval scores only | Agent retrieves cited passages for a claim |
 | R6 — `no evidence` is a result, not a failure | Data Model › Outcome types, MCP Contract › Errors | No passage above the threshold yields no evidence |
-| R7 — scope filters both paths before fusion | Retrieval › Paths, scope, fusion, Retrieval › Scope resolution | Scope restricts passages to the named genre |
+| R7 — scope filters both paths before fusion | Retrieval › Paths, scope, fusion, Retrieval › Scope resolution | Scope restricts passages to the named genre; Scope filters passages by language; Scope filters passages by author and year |
+| Determinism of identical requests | Retrieval › Paths, scope, fusion (no per-request randomness, fixed thresholds, fixed RRF `k`) | Identical requests return the same sequence |
+| Citation exactness of a search result | MCP Contract › `read_passage` (cited slice equals the stored span) | A returned citation resolves to the passage it cites |
+| Window clamp | MCP Contract › `read_passage`, Configuration (`read.max_window_chars`) | A widened context is clamped to the chapter and the maximum window |
+| Malformed request | MCP Contract › Errors (`invalid_arguments`) | A malformed request is rejected |
+| Unknown citation | MCP Contract › Errors (`invalid_citation`) | An unknown citation is rejected as an invalid request |
+| Indexing failure visible on an abstention (T9) | Data Model › Outcome types (`indexing` summary) | An abstention names the editions that failed indexing |
 | Extension 1a — unknown work | Retrieval › Scope resolution strict unknown-id rule | A scope naming an unknown work yields no evidence |
 | Extension 3a — nothing above the threshold | Retrieval › Paths, scope, fusion evidence threshold | No passage above the threshold yields no evidence |
-| Extension 3b — unavailable or stale index | Data Model › Index state and freshness, Runtime Flows › `search_passages` | An unavailable or stale index yields an unavailability report |
+| Extension 3b — unavailable or stale index | Data Model › Index state and freshness, Runtime Flows › `search_passages` | A stale index yields an unavailability report; An unavailable index yields an unavailability report |
+| Extension 3c — library unreachable | Indexing Subfunction step 1 (`calibredb list` failure), Runtime Flows › `search_passages` | An unreachable library yields an unavailability report |
 | Extension 4a — fewer than requested | Retrieval › Paths, scope, fusion `short`, no padding | Fewer passages than requested are returned short |
 | Event `QuestionAsked` | Runtime Flows › `search_passages` request acceptance | Agent retrieves cited passages for a claim |
 | Event `QueryExpanded` | Retrieval › Expansion | Agent retrieves cited passages for a claim |
 | Event `PassagesRetrieved` | Retrieval › Paths, scope, fusion | Agent retrieves cited passages for a claim |
 | Event `AbstentionDeclared` | Data Model › Outcome types (`no_evidence` arms) | No passage above the threshold yields no evidence; A scope naming an unknown work yields no evidence |
-| Event `UnavailabilityReported` | Data Model › Outcome types `unavailable` arm | An unavailable or stale index yields an unavailability report |
-| Persona `agent--for-reader` — abstention distinguishable, deterministic order | Data Model › Outcome types, Retrieval › Paths, scope, fusion | Agent retrieves cited passages for a claim |
-| Persona `reader--researcher` — the citation opens the exact position | Data Model › Domain types, MCP Contract › `read_passage` | Agent widens context around a cited passage |
+| Event `UnavailabilityReported` | Data Model › Outcome types `unavailable` arm | A stale index yields an unavailability report; An unavailable index yields an unavailability report; An unreachable library yields an unavailability report |
+| Persona `agent--for-reader` — abstention distinguishable, deterministic order | Data Model › Outcome types, Retrieval › Paths, scope, fusion | Agent retrieves cited passages for a claim; Identical requests return the same sequence |
+| Persona `reader--researcher` — the citation carries the exact position the agent opens (T10) | Data Model › Domain types (offsets), MCP Contract › `read_passage` | Agent widens context around a cited passage; A returned citation resolves to the passage it cites |
+| Decision T8 — calibredb discovery and export | Technology Decisions › Stack (Library interface), Indexing Subfunction | An unreachable library yields an unavailability report (the CLI failure path) |
+| Decision T9 — `indexing` summary on an abstention | Data Model › Outcome types, MCP Contract › `search_passages` | An abstention names the editions that failed indexing |
+| Decision T10 — offsets authoritative, viewer deferred | Data Model › Domain types, MCP Contract › `read_passage`, arc42 TD-009 | Agent widens context around a cited passage |
 
 ### Retained non-e2e scenarios (black-box-first justification)
 
-| Scenario | Which case this covers that the e2e does not |
+| Scenario | Distinct invariant this covers that the e2e does not |
 |---|---|
-| Scope restricts passages to the named genre | A scope filter across two genres; the e2e claim sits in one genre only. |
-| A scope naming an unknown work yields no evidence | The unknown-work abstention, an input the e2e never supplies. |
+| Scope restricts passages to the named genre | A scope filter across two genres, with a non-empty positive assertion; the e2e claim sits in one genre only. |
+| Scope filters passages by language | The language filter on the work metadata; no e2e input filters by language. |
+| Scope filters passages by author and year | The author and publication-year filters, combined; the e2e supplies a genre scope only. |
+| A scope naming an unknown work yields no evidence | The unknown-work abstention for a well-formed id (`"999"`), an input the e2e never supplies. |
+| An abstention names the editions that failed indexing | The optional `indexing` summary of an abstention; the e2e never scopes to the unsupported-format work. |
 | No passage above the threshold yields no evidence | The abstention arm itself; the e2e asserts the success arm. |
-| An unavailable or stale index yields an unavailability report | A backdated index / generation mismatch, which the e2e's healthy stack cannot reach without changing the whole scenario's premise. |
-| Fewer passages than requested are returned short | `short: true` with no padding; the e2e requests 5 with ≥5 available. |
-| The result is capped at twenty passages | The clamp at 20 for an over-large request, a variant of the same action, not a second action. |
-| A retrieval never changes the library | The mutation guarantee, asserted on library metadata and index state. |
+| A stale index yields an unavailability report | The freshness/generation gate with reason `stale_index`, which the e2e's healthy stack cannot reach without changing the scenario's premise. |
+| An unavailable index yields an unavailability report | The empty/unavailable store arm with reason `index_unavailable`, a different gate from the stale one. |
+| An unreachable library yields an unavailability report | The CLI failure path with reason `library_unreachable`; the e2e library is always present. |
+| Fewer passages than requested are returned short | `short: true` with no padding; the e2e result is not necessarily short and does not assert an exact count. |
+| The result is capped at twenty passages | The clamp at 20 for an over-large request (`limit: 50`), a variant of the same action, not a second action. |
+| Identical requests return the same sequence | Repeatability: two submissions compared to each other; the e2e asserts one order only. |
+| A returned citation resolves to the passage it cites | The cited slice equals the stored span with `window_chars: 0`; the e2e scenario widens and checks containment, not extraction exactness. |
+| A widened context is clamped to the chapter and the maximum window | The two clamps and the `truncated` flag; the e2e window is a small, unclamped one. |
+| An unknown citation is rejected as an invalid request | `invalid_citation` as a protocol error rather than `no_evidence`; the e2e never sends an unknown citation. |
+| A malformed request is rejected | `invalid_arguments` for a missing claim/language or a limit below 1; the e2e sends only valid requests. |
+| A retrieval never changes the library | The mutation guarantee, asserted on the library listing, the accepted glossary and the generation/last-success probe. |
 
 Each of these is a variant rule of the same two actions, so none creates a
 second inventory entry or a second `@e2e` scenario.
+
+**Why R2 and R5 are not separately observable.** R2 says the result contains
+only passages retrieved for this request. There is no cross-request state a
+consumer can observe: every request recomputes expansion, scope and ranking from
+the store, no result is cached, and the index is read-only during retrieval. A
+scenario asserting "only this request's passages" would therefore restate the
+success arm of the e2e scenario with no distinct observable value; the
+per-request recomputation is a property of the design (Retrieval › Paths, scope,
+fusion) and is covered by the determinism scenario. R5 says the product does not
+judge whether a passage supports the claim. That is the absence of a field, not
+a behaviour: the `candidate_passages` shape carries citation, score, expansion
+and text, and no verdict. Asserting "no support verdict is present" is a schema
+assertion already implied by every passage assertion in the e2e scenario, so a
+separate scenario would add a duplicate invariant rather than new evidence. Both
+are recorded here rather than invented as scenarios.
 
 ## Risk
 
@@ -884,20 +1071,48 @@ passage ids, offsets and texts; (4) the stale/short/cap assertions are counts
 and orderings, not score values, so threshold tuning cannot make the suite
 flaky.
 
+**Second risk — the documented CLI changes shape.** `calibredb list
+--for-machine --fields all` prints one JSON array of per-book objects, and
+`calibredb export` writes the format bytes locally; both are documented, but a
+calibre upgrade can add fields, change the author-join separator (` & `) or move
+the export flags. Because the tests run the real CLI, the failure is immediate
+rather than silent, but it can block every scenario at once.
+**Mitigation:** the listing is parsed against the recorded field set and an
+unparsable or non-zero invocation is a named `source_unreachable` failure, never
+a partial library; the fixture library is built with the same CLI in the
+devShell and in the e2e image, so a version skew fails the build; the author
+separator is recorded as a known limitation rather than guessed around. This
+risk is carried in arc42 chapter 11 (R-012).
+
+**Third risk — the test runner itself.** The runner API, the `--name`/`--tags`
+conflict, the Basic parser's root handling and the empty-step-body hole were all
+wrong in the first draft of this design and are corrected above against the
+cucumber 0.23 source.
+**Mitigation (applied):** `Opts::<_, _, _>::parsed()`, a single `"givn"` root
+passed to `run_and_exit`, `--name` used alone, `--input` for the strictness
+feature, `unimplemented!()` plus a CI grep for empty step bodies, and a
+`--prove-strictness` run that must exit non-zero before any scenario may be
+implemented.
+
 Residual risk after mitigation: the PDF extractor's reading order on real books
 differs from fixture PDFs, which will surface as `extraction_failed` or as odd
 chunk boundaries on real content; it does not break the contract, and the
-`IndexingFailed` reason keeps it visible.
+`IndexingFailed` reason keeps it visible. A calibre CLI upgrade can still change
+the `authors` join convention, which would split an author name; the failure is
+visible in scope results, and TD-010 records the follow-up.
 
 ## Version Freshness
 
-All versions were read from the crates.io API on **2026-10-27**; no version in
-this document comes from memory. Cargo resolves semver ranges and the setup task
-commits `Cargo.lock`.
+Every crate version was read from the crates.io API on **2026-10-27**, and the
+calibre interface shape was read from the calibre documentation and from
+`cmd_list.py`/`cmd_export.py` on the same date; no version or interface detail
+in this document comes from memory. Cargo resolves semver ranges and the setup
+task commits `Cargo.lock`.
 
 | Technology | Version recorded | Source |
 |---|---|---|
-| Rust | latest stable, pinned at setup | `rustup show` / nixpkgs at setup time (see Technology Decisions › Stack, host caveat) |
+| Rust | stable, resolved by the Nix devShell at setup | `nix develop` / nixpkgs at setup time (see Technology Decisions › Stack, host state); no number guessed, and the host rustup is not the pin |
+| calibre (`calibredb`) | installed by the devShell from nixpkgs at setup; the documented CLI was verified against the calibre 9.17 documentation and `cmd_list.py`/`cmd_export.py` on 2026-10-27. The host has no `calibredb` binary as of that date (`calibredb --version` → command not found), so the setup task installs it and records the resolved version | calibre documentation 2026-10-27; `calibredb` presence check on the host |
 | `tokio` | 1.54.1 | crates.io API, 2026-10-27 |
 | `axum` | 0.8.9 | crates.io API, 2026-10-27 |
 | `rmcp` | 3.8.0 (features verified) | crates.io API, 2026-10-27 |
@@ -912,4 +1127,4 @@ commits `Cargo.lock`.
 | `serde` / `uuid` / `thiserror` / `anyhow` | 1.0.229 / 1.29.0 / 2.0.21 / 1.0.104 | crates.io API, 2026-10-27 |
 | `podman` / `podman-compose` | 5.8.9 / 1.6.0 | `podman --version`, `podman-compose --version`, 2026-10-27 |
 | `grcov`, `llvm-tools` | latest stable, resolved from nixpkgs at setup | no number guessed |
-| Twin container base | the Rust build image resolved by the setup task | no number guessed |
+| Container base (product and embedding twin) | the calibre- and Rust-bearing image resolved by the setup task from the same nixpkgs pin | no number guessed |

@@ -25,8 +25,9 @@
   would make the deterministic order and the evidence threshold depend on a
   model call.
 - **Explicit failure over silent omission.** A format the product cannot read is
-  `IndexingFailed` with a reason, so the agent can tell a missing passage from a
-  missing capability.
+  `IndexingFailed` with a reason, and the recorded failure reaches the agent as
+  the optional `indexing` summary of an abstention, so the agent can tell a
+  missing passage from a missing capability without a third tool.
 
 ## Technology choices
 
@@ -34,7 +35,8 @@
 |---|---|---|
 | Language | Rust (stable, edition 2024) | Given constraint; one language for product, twins and fixtures. |
 | Async runtime / HTTP | tokio with axum | I/O-bound server with one concurrency model. |
-| Agent protocol | MCP over Streamable HTTP via the official Rust SDK (`rmcp`) | ADR-0002. |
+| Agent protocol | MCP over Streamable HTTP; the official Rust SDK (`rmcp`) is the implementation choice, owned by `design.md` | Transport and process boundary: ADR-0002. SDK rationale: `design.md` (MCP SDK implementation). |
+| Library interface | `calibredb list --for-machine --fields all` for discovery, `calibredb export` for edition bytes | The documented calibre CLI, usable against a content-server URL or a local path; no HTTP calibre client and no internal route. |
 | Lexical index | Tantivy, BM25, per-language stemming | Calibrated, per-language scores for the evidence threshold. |
 | Vector index | usearch (HNSW, cosine), embedded single file | ADR-0001. |
 | Metadata and index state | SQLite (WAL) via rusqlite | Transactional state machine, no service to run. |
@@ -42,7 +44,7 @@
 | Extraction | rbook (EPUB 2/3), pdf-extract (PDF); AZW3/MOBI fail explicitly | Chapter structure for EPUB; explicit failure for the rest. |
 | Chunking | text-splitter, character capacity, chapter-bounded | Reproducible offsets across re-indexing. |
 | Gherkin runner | cucumber-rs with `fail_on_skipped()` | Rust, strict by configuration. |
-| Local infrastructure | rootless podman-compose with two behavioural twins | Docker is unavailable on this host; behavioural twins make the stale-index case expressible. |
+| Local infrastructure | rootless podman-compose with a fixture calibre library and an embedding twin | Docker is unavailable on this host; the real `calibredb` against a fixture library keeps the calibre contract honest, and the embedding twin makes the retrieval deterministic. |
 
 ## Approach to quality goals
 
@@ -51,6 +53,6 @@
 | Evidence fidelity | Offsets are Unicode scalar indices into stored normalized text; `read_passage` verifies the cited span's hash against the passage record; a citation is only produced from an indexed edition. |
 | Honest outcome | Three mutually exclusive tagged outcomes; `short` flags a result below the requested number; the freshness check runs before retrieval so unavailability cannot masquerade as `no evidence`. |
 | Determinism | Content-hash-keyed idempotent indexing; deterministic keyed expansion; per-path thresholds; RRF plus a total order on `(score, work id, passage index)`. |
-| Privacy of the library | Both outbound endpoints are required configuration, validated at startup; no telemetry path exists; the test twins are the only endpoints used in tests. |
+| Privacy of the library | The library target (`calibredb --with-library`) and the embedding endpoint are required configuration, validated at startup; no telemetry path exists; `calibredb` runs against a local fixture library in tests and the embedding twin is the only network endpoint used there. |
 | Operability without a container | Single binary plus a data directory; the index is rebuildable; production runs under systemd on the owner's host. |
-| Testability | One command brings up the product and its twins; both twins are also mounted in-process for the non-e2e scenarios, so the same production paths run at two speeds. |
+| Testability | One command brings up the product, the embedding twin and the fixture calibre library; the embedding twin is also mounted in-process for the non-e2e scenarios, and `calibredb` is the real CLI in both, so the same production paths run at two speeds. |

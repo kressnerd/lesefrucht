@@ -12,7 +12,7 @@ historical records live under [`archive/`](archive/).
 | ADR | Title | Status | Date |
 |---|---|---|---|
 | [ADR-0001](ADR-0001-embedded-hybrid-index.md) | Embedded hybrid index built from Tantivy, usearch and SQLite | accepted | 2026-10-27 |
-| [ADR-0002](ADR-0002-mcp-streamable-http-transport.md) | Agent interface as MCP over Streamable HTTP using the official Rust SDK | accepted | 2026-10-27 |
+| [ADR-0002](ADR-0002-mcp-streamable-http-transport.md) | Agent interface as MCP over Streamable HTTP | accepted | 2026-10-27 |
 
 ## Notes
 

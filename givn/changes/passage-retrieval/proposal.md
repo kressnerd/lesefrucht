@@ -3,10 +3,10 @@
 ## Release note
 
 An agent can submit a claim or phrase to the indexed library and receive up to
-twenty candidate passages, each with the exact citation it opens, the score that
-ranked it and the expansion that produced it, plus wider context on request and
-an explicit refusal or unavailability report when the library cannot supply
-evidence.
+twenty candidate passages, each with a citation that carries its exact position
+and opens its edition, the score that ranked it and the expansion that produced
+it, plus wider context on request and an explicit abstention or unavailability
+report when the library cannot supply evidence.
 
 ## Use-Case Context
 
@@ -72,9 +72,13 @@ What the agent can observe:
 - **Change nothing.** A retrieval and a context widening leave the library, its
   metadata and the index state unchanged.
 - **See indexing that does not lie.** The index is built from the library's
-  editions. An edition in a format the product cannot read in this slice is
-  reported as failed indexing with a reason, never silently skipped, so the
-  agent can tell a missing passage from a missing capability.
+  editions, discovered and exported through calibre's documented `calibredb`
+  interface (`list` for the catalogue, `export` for edition bytes). An edition
+  in a format the product cannot read in this slice is reported as failed
+  indexing with a reason, never silently skipped. That report accompanies an
+  abstention: `no evidence` names the editions that failed indexing and their
+  reasons when they are relevant to the request, so the agent can tell a missing
+  passage from a missing capability without a separate status call.
 
 The scope is applied to the request before results are combined, so a scoped
 request can never return a passage from outside the scope.

@@ -85,8 +85,8 @@ coverage:
 # Overlay semantics match `verify:` — this block replaces the default as a
 # whole, so list every field you need.
 run:
-  command: "givn missing-run-command"   # replace with the real start command
-  # product_type: server
-  # port_env: "PORT"
-  # ready_path: "/healthz"
-  # ready_timeout_s: 60
+  command: "./dev-up.sh"
+  product_type: server
+  port: 8787
+  ready_path: "/healthz"
+  ready_timeout_s: 120

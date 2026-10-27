@@ -9,12 +9,12 @@ flowchart TB
     MCP["mcp<br/>tools and sessions"]
     RET["retrieval<br/>search and context"]
     ING["indexing<br/>pipeline and queue"]
-    LIB["library<br/>calibre client and selection"]
+    LIB["library<br/>calibredb client and selection"]
     STORE["index<br/>store facade: sqlite, tantivy, usearch, text"]
     DOM["domain<br/>Work, Edition, Passage, Citation, Question"]
     CFG["config"]
   end
-  Calibre(["calibre content server"])
+  Calibre(["calibre library<br/>(calibredb, URL or path)"])
   Embed(["OpenAI-compatible endpoint"])
 
   Agent --> MCP
@@ -38,7 +38,7 @@ flowchart TB
 | `mcp` | The agent surface: session handling, the two tools, request validation, the tagged result serialisation, protocol errors. |
 | `retrieval` | Expansion, scope resolution, both retrieval paths, evidence threshold, fusion, ordering, cap and `short`; plus context widening for a citation. |
 | `indexing` | The enabling subfunction: discovery, edition selection, extraction, chapter-aware chunking, embedding, index state machine and the single-consumer queue. |
-| `library` | The calibre content-server client and the selection policy (format preference, one selected edition per work). |
+| `library` | The `calibredb` client (list, export, per-run temp directories), the listing parser and the selection policy (format preference, one selected edition per work). There is no HTTP calibre client and no calibre twin. |
 | `index` | The store facade: SQLite metadata and state, the Tantivy directory, the usearch file, the normalized text files, and the repair pass. |
 | `config` | TOML plus environment, validation, and the required-endpoint rule. |
 
@@ -61,9 +61,22 @@ into its surrounding text.
 | `scope` | Resolve genre, language, authors, year range and work ids against the work table; the strict unknown-work rule lives here. |
 | `lexical` | Build the Tantivy query over claim and expanded terms, apply the scope filter inside the query, return ranked candidates. |
 | `vector` | Embed the expanded query, search usearch with scope overfetch, apply the scope predicate, return ranked candidates. |
-| `fuse` | Apply the evidence threshold per path, run RRF, sort by `(score, work id, passage index)`. |
+| `fuse` | Apply the evidence threshold per path, run RRF, sort by `(score desc, work id numeric asc, passage index asc)`. |
 | `service` | Freshness gate, limit clamp and `short`, outcome selection, orchestration of the paths. |
 | `context` | Widen a cited passage within its chapter, clamp to the configured window, verify the cited span's hash. |
+
+### `library`
+
+**Responsibility:** turn the calibre library into a listing of works and
+editions, and produce edition bytes on demand, through the documented CLI only.
+
+**Contained elements:**
+
+| Element | Responsibility |
+|---|---|
+| `calibredb` | Spawn `calibredb list`/`calibredb export` with `--with-library`, enforce the per-invocation timeout, parse one JSON array of per-book objects, create and remove the per-run temp directory. |
+| `discovery` | Map the listing (`id`, `title`, `authors`, `languages`, `tags`, `pubdate`, `formats`) to `Work` and candidate `Edition` records. |
+| `selection` | Apply `edition.format_preference`; exactly one selected edition per work. |
 
 ### `indexing`
 

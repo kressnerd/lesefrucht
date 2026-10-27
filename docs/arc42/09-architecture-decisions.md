@@ -19,7 +19,7 @@ second MADR section into this file.
 | ADR | Title | Status | Date | File |
 |---|---|---|---|---|
 | ADR-0001 | Embedded hybrid index built from Tantivy, usearch and SQLite | accepted | 2026-10-27 | [ADR-0001-embedded-hybrid-index.md](adr/ADR-0001-embedded-hybrid-index.md) |
-| ADR-0002 | Agent interface as MCP over Streamable HTTP using the official Rust SDK | accepted | 2026-10-27 | [ADR-0002-mcp-streamable-http-transport.md](adr/ADR-0002-mcp-streamable-http-transport.md) |
+| ADR-0002 | Agent interface as MCP over Streamable HTTP | accepted | 2026-10-27 | [ADR-0002-mcp-streamable-http-transport.md](adr/ADR-0002-mcp-streamable-http-transport.md) |
 
 ## Decisions routed to canonical artifacts
 
@@ -31,8 +31,10 @@ their canonical home, and not as ADRs:
 | EPUB and PDF extraction libraries; MOBI/AZW3 explicit failure | Local implementation choice inside one component, reversible within one change, no durable boundary. | `givn/changes/passage-retrieval/design.md` (Technology Decisions, Indexing Subfunction) |
 | Chapter-aware chunking and passage identity | Algorithm and data-shape detail owned by the design and the passage record. | `givn/changes/passage-retrieval/design.md` (Data Model, Indexing Subfunction) |
 | Unicode scalar offsets as the citation unit | A data-model decision whose observable effect is a citation contract; owned by the design and the use-case contract. | `givn/changes/passage-retrieval/design.md` (Data Model, MCP Contract) |
-| Required outbound endpoints (no default cloud) | A product boundary already fixed by the frame and the `rights--holder` Persona; recorded as a constraint, not chosen here. | chapter 2, `design.md` (Configuration) |
-| The calibre content server as the only calibre interface | Given constraint of the topic, not a decision of this change. | chapter 2 |
+| Required outbound endpoints (no default cloud) | A product boundary already fixed by the frame and the `rights--holder` Persona; recorded as a constraint, not chosen here. | `givn/changes/passage-retrieval/design.md` (Configuration) |
+| MCP client implementation: official Rust SDK versus a hand-rolled JSON-RPC transport | Local implementation choice inside `mcp` and the e2e driver; reversible within one change and owning no boundary of its own, because ADR-0002 already fixes the transport and process boundary. | `givn/changes/passage-retrieval/design.md` (Technology Decisions › MCP SDK implementation) |
+| Library discovery and edition bytes through `calibredb` rather than HTTP | The documented-interface constraint is given (chapter 2); which documented commands implement it is a component detail. | `givn/changes/passage-retrieval/design.md` (Technology Decisions › Stack, Indexing Subfunction) |
+| calibre reached only through documented interfaces | Given constraint of the topic and the recorded-contract rule, not a decision of this change. | chapter 2 |
 
 ## Individual ADR contract
 
