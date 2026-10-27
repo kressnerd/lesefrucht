@@ -146,7 +146,7 @@ Feature: Passage retrieval
     Then the agent receives no evidence with reason no evidence
     And the result names work "5" as an edition that failed indexing with reason unsupported format
 
-  @givn.added @wip
+  @givn.added
   Scenario: An unreachable library yields an unavailability report
     Given the library cannot be reached
     When the agent submits a claim

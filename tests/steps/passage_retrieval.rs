@@ -160,6 +160,12 @@ async fn failed_work(world: &mut World, work: String) {
     world.named_work = Some(work);
 }
 
+#[given(regex = r"^the library cannot be reached$")]
+async fn library_unreachable(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+    world.break_library().expect("point the library at a missing target");
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -389,6 +395,11 @@ async fn stale_report(world: &mut World) {
 #[then(regex = r"^the agent receives an unavailability report with reason index unavailable$")]
 async fn unavailable_report(world: &mut World) {
     assert_unavailable(world, UnavailabilityReason::IndexUnavailable);
+}
+
+#[then(regex = r"^the agent receives an unavailability report with reason library unreachable$")]
+async fn unreachable_report(world: &mut World) {
+    assert_unavailable(world, UnavailabilityReason::LibraryUnreachable);
 }
 
 #[then(regex = r"^the report is not a no-evidence result$")]
