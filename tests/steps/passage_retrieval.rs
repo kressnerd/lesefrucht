@@ -170,6 +170,17 @@ async fn retrieve_and_widen(world: &mut World) {
         .expect("read");
 }
 
+#[when(regex = r"^the agent submits the same claim, scope and limit twice$")]
+async fn submit_twice(world: &mut World) {
+    let scope = Some(Scope {
+        genre: Some("fachbuch".into()),
+        ..Scope::default()
+    });
+    world.search(CLAIM, "de", scope.clone(), Some(5)).await.expect("first search");
+    world.second_outcome = world.outcome.clone();
+    world.search(CLAIM, "de", scope, Some(5)).await.expect("second search");
+}
+
 #[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
 async fn at_least_one_fachbuch(world: &mut World) {
     let (_, _, _, citations) = candidate(world);
@@ -295,5 +306,27 @@ async fn generation_unchanged(world: &mut World) {
     let status = world.store().status().expect("status");
     assert_eq!(status.library_generation, generation);
     assert_eq!(status.last_success_at, last_success);
+}
+
+#[then(regex = r"^both candidate-passage results carry the same citations in the same order$")]
+async fn same_sequence(world: &mut World) {
+    let keys = |outcome: &QuestionOutcome| match outcome {
+        QuestionOutcome::CandidatePassages { passages, .. } => passages
+            .iter()
+            .map(|hit| {
+                (
+                    hit.citation.work_id.0.clone(),
+                    hit.citation.edition_id.0.clone(),
+                    hit.citation.passage_index,
+                    hit.citation.char_start,
+                    hit.citation.char_end,
+                )
+            })
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    let first = keys(world.outcome.as_ref().expect("second outcome"));
+    let second = keys(world.second_outcome.as_ref().expect("first outcome"));
+    assert_eq!(first, second);
 }
 

@@ -91,7 +91,7 @@ Feature: Passage retrieval
     And the accepted glossary is unchanged
     And the index generation and the last successful index time are unchanged
 
-  @givn.added @wip
+  @givn.added
   Scenario: Identical requests return the same sequence
     Given an indexed library
     When the agent submits the same claim, scope and limit twice
