@@ -1,0 +1,35 @@
+services:
+  embedding:
+    build:
+      context: .
+      dockerfile: Dockerfile.twin
+    environment:
+      PORT: "8789"
+      EMBEDDING_DIMENSION: "64"
+    ports:
+      - "127.0.0.1:8789:8789"
+
+  product:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      LESEFRUCHT__LIBRARY__URL: /library
+      LESEFRUCHT__EMBEDDING__BASE_URL: http://embedding:8789/v1
+      LESEFRUCHT__EMBEDDING__MODEL: deterministic
+      LESEFRUCHT__EMBEDDING__DIMENSION: "64"
+      LESEFRUCHT__EXPANSION__SYNONYMS_FILE: /fixtures/synonyms.toml
+      LESEFRUCHT__INDEX__GENERATION_CACHE_MS: "0"
+      LESEFRUCHT__RETRIEVAL__LEXICAL_MIN_SCORE: "0.05"
+      LESEFRUCHT__RETRIEVAL__VECTOR_MIN_COSINE: "0.99"
+    volumes:
+      - ./tests/fixtures/library:/library:ro
+      - ./tests/fixtures/synonyms.toml:/fixtures/synonyms.toml:ro
+      - dev-data:/data
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      - embedding
+
+volumes:
+  dev-data:

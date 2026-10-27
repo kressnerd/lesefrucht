@@ -1,0 +1,16 @@
+FROM rust:1.88-bookworm AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY tests ./tests
+COPY twins ./twins
+COPY xtask ./xtask
+RUN cargo build --release -p openai-compatible
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/openai-compatible /usr/local/bin/openai-compatible
+EXPOSE 8789
+CMD ["openai-compatible"]

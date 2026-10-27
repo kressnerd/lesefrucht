@@ -45,3 +45,8 @@ rustc-ice-*.txt
 .maki/commands/grill-*.md
 .githooks/commit-msg
 # givn:end:rules
+
+# Runtime data and test fixtures
+/data
+/coverage
+/tests/fixtures/library

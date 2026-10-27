@@ -1,0 +1,46 @@
+[server]
+bind = "0.0.0.0:8787"
+
+[mcp]
+path = "/mcp"
+
+[library]
+calibredb_binary = "calibredb"
+url = "/library"
+timeout_ms = 30000
+
+[edition]
+format_preference = ["epub", "azw3", "mobi", "pdf"]
+
+[extraction]
+supported = ["epub", "pdf"]
+
+[index]
+dir = "/data/index"
+freshness_bound_hours = 168
+generation_cache_ms = 0
+
+[chunk]
+max_chars = 1800
+overlap_chars = 200
+
+[embedding]
+base_url = "http://embedding:8789/v1"
+model = "deterministic"
+dimension = 64
+batch_size = 32
+timeout_ms = 10000
+
+[expansion]
+synonyms_file = "/fixtures/synonyms.toml"
+
+[retrieval]
+limit_default = 5
+limit_max = 20
+lexical_min_score = 0.05
+vector_min_cosine = 0.99
+rrf_k = 60
+vector_overfetch = 4
+
+[read]
+max_window_chars = 4000
