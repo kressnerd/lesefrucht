@@ -75,7 +75,7 @@ Feature: Passage retrieval
     And the result is marked short
     And no passage is padded to reach the requested number
 
-  @givn.added @wip
+  @givn.added
   Scenario: The result is capped at twenty passages
     Given an indexed library where more than twenty passages reach the threshold
     When the agent requests 50 passages
