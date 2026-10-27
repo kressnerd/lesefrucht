@@ -60,7 +60,7 @@ Feature: Passage retrieval
     Then the agent receives an unavailability report with reason stale index
     And the report is not a no-evidence result
 
-  @givn.added @wip
+  @givn.added
   Scenario: An unavailable index yields an unavailability report
     Given no edition is indexed
     When the agent submits a claim

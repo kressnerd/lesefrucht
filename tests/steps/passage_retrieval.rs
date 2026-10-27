@@ -80,6 +80,11 @@ async fn stale_index(world: &mut World) {
     world.make_stale().expect("backdate the index");
 }
 
+#[given(regex = r"^no edition is indexed$")]
+async fn empty_index(world: &mut World) {
+    world.ensure_empty_index().await.expect("empty index");
+}
+
 #[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
 async fn submit_with_genre(world: &mut World) {
     world
@@ -179,6 +184,11 @@ async fn not_failure_not_empty(world: &mut World) {
 #[then(regex = r"^the agent receives an unavailability report with reason stale index$")]
 async fn stale_report(world: &mut World) {
     assert_unavailable(world, UnavailabilityReason::StaleIndex);
+}
+
+#[then(regex = r"^the agent receives an unavailability report with reason index unavailable$")]
+async fn unavailable_report(world: &mut World) {
+    assert_unavailable(world, UnavailabilityReason::IndexUnavailable);
 }
 
 #[then(regex = r"^the report is not a no-evidence result$")]
