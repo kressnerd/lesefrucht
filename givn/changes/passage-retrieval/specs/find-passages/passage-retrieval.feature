@@ -31,7 +31,7 @@ Feature: Passage retrieval
     And the bounds start at or before the cited start and end at or after the cited end
     And the bounds name the same chapter as the cited passage
 
-  @givn.added @wip
+  @givn.added
   Scenario: Scope restricts passages to the named genre
     Given the claim appears in indexed works of the genres fachbuch and sachbuch
     When the agent submits that claim with scope genre=fachbuch

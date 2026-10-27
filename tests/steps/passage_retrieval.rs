@@ -58,3 +58,52 @@ fn assert_unavailable(world: &World, reason: UnavailabilityReason) {
         other => panic!("expected an unavailability report, got {other:?}"),
     }
 }
+
+#[given(regex = r"^the claim appears in indexed works of the genres fachbuch and sachbuch$")]
+async fn claim_in_two_genres(world: &mut World) {
+    world.ensure_indexed().await.expect("index the fixture library");
+}
+
+#[when(regex = r"^the agent submits that claim with scope genre=fachbuch$")]
+async fn submit_with_genre(world: &mut World) {
+    world
+        .search(
+            CLAIM,
+            "de",
+            Some(Scope {
+                genre: Some("fachbuch".into()),
+                ..Scope::default()
+            }),
+            None,
+        )
+        .await
+        .expect("search");
+}
+
+#[then(regex = r"^at least one returned passage comes from a work of the genre fachbuch$")]
+async fn at_least_one_fachbuch(world: &mut World) {
+    let (_, _, _, citations) = candidate(world);
+    let works = works(world);
+    assert!(
+        citations.iter().any(|citation| works
+            .get(&citation.work_id)
+            .is_some_and(|work| work.genre == Some(Genre::Fachbuch))),
+        "at least one fachbuch passage"
+    );
+}
+
+#[then(regex = r"^every returned citation belongs to an indexed work of the genre fachbuch$")]
+async fn every_fachbuch(world: &mut World) {
+    let (_, _, _, citations) = candidate(world);
+    let works = works(world);
+    for citation in citations {
+        let work = works.get(&citation.work_id).expect("indexed work");
+        assert_eq!(work.genre, Some(Genre::Fachbuch), "citation genre for {}", work.id);
+    }
+}
+
+#[then(regex = r"^no returned citation belongs to a work outside the genre fachbuch$")]
+async fn none_outside(world: &mut World) {
+    every_fachbuch(world).await;
+}
+
